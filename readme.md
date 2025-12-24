@@ -1,0 +1,1 @@
+The functions are the same as Cloe's. It is also built based on manga-ocr. Since Cloe has bugs that no one is maintaining, I simply made this one. The main program is screen.py. You can run test.py to check if the environment is properly configured. If there are any features you need to add, please implement them yourself. I only care about the features I use.
