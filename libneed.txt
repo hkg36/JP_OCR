@@ -1,0 +1,6 @@
+pynput
+jaconv
+pystray
+transformers
+loguru
+Pillow

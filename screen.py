@@ -117,7 +117,10 @@ class SnippingTool:
             self.canvas.delete(self.ocr_bg_id)
             self.ocr_bg_id = None
             self.ocr_bg_photo = None
+        if self.last_result == "":
+            self.perform_ocr()
         self.root.withdraw()
+        self.last_result = ""
 
     def on_cancel(self, event):
         # 取消定时器
