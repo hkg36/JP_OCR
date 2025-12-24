@@ -135,6 +135,7 @@ class SnippingTool:
             self.canvas.delete(self.ocr_bg_id)
             self.ocr_bg_id = None
             self.ocr_bg_photo = None
+        self.last_result = ""
         self.root.withdraw()
 
     def create_tray_icon(self):
