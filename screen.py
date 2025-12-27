@@ -128,14 +128,17 @@ class SnippingTool:
             self.perform_ocr()
         self.root.withdraw()
         if self.last_result != "":
-            text = self.last_result
-            tts = gTTS(text=text, lang='ja')
-            fp = io.BytesIO()
-            tts.write_to_fp(fp)
-            fp.seek(0)
+            try:
+                text = self.last_result
+                tts = gTTS(text=text, lang='ja')
+                fp = io.BytesIO()
+                tts.write_to_fp(fp)
+                fp.seek(0)
 
-            pygame.mixer.music.load(fp)
-            pygame.mixer.music.play()
+                pygame.mixer.music.load(fp)
+                pygame.mixer.music.play()
+            except Exception as e:
+                print("语音播放失败:", e)
         self.last_result = ""
         self.fullscreen_img = None
 
