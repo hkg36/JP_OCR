@@ -35,6 +35,7 @@ class SnippingTool:
         self.ocr_bg_photo = None
         self.last_result = ""
         pygame.mixer.init()
+        self.last_sound = None
     def start_snip(self):
         if self.canvas:
             self.canvas.destroy()
@@ -133,15 +134,22 @@ class SnippingTool:
                 tts = gTTS(text=text, lang='ja')
                 fp = io.BytesIO()
                 tts.write_to_fp(fp)
-                fp.seek(0)
+                self.last_sound = fp
+                self.last_sound.seek(0)
 
-                pygame.mixer.music.load(fp)
+                pygame.mixer.music.load(self.last_sound)
                 pygame.mixer.music.play()
             except Exception as e:
                 print("语音播放失败:", e)
         self.last_result = ""
         self.fullscreen_img = None
-
+    def on_replay(self, event):
+        try:
+            if self.last_sound:
+                pygame.mixer.music.rewind()
+                pygame.mixer.music.play()
+        except Exception as e:
+            print("语音播放失败:", e)
     def on_cancel(self, event):
         # 取消定时器
         if self.ocr_timer:
@@ -216,10 +224,12 @@ if __name__ == "__main__":
     
     def on_exit():
         tool.on_tray_exit()
+    def on_replay():
+        tool.on_replay(None)
     
     listener = keyboard.GlobalHotKeys({
         '<alt>+q': on_activate,
-        '<alt>+w': on_exit
+        '<alt>+w': on_replay,
     })
     tool.listener = listener
     listener.start()
