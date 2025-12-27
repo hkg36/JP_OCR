@@ -8,6 +8,13 @@ import pystray
 import win32api, win32con, winerror, win32event
 import os
 import ocr
+from gtts import gTTS
+import pygame
+import io
+import os
+
+os.environ['http_proxy'] = 'http://127.0.0.1:10808'
+os.environ['https_proxy'] = 'http://127.0.0.1:10808'
 
 Single_mutex = None
 
@@ -27,7 +34,7 @@ class SnippingTool:
         self.ocr_bg_id = None
         self.ocr_bg_photo = None
         self.last_result = ""
-
+        pygame.mixer.init()
     def start_snip(self):
         if self.canvas:
             self.canvas.destroy()
@@ -94,11 +101,11 @@ class SnippingTool:
         width = bbox[2] - bbox[0]
         height = bbox[3] - bbox[1]
         # 创建半透明灰色背景
-        bg_image = Image.new('RGBA', (width, height), (128, 128, 128, 250))
+        bg_image = Image.new('RGBA', (width, height), (0, 0, 0, 255))
         self.ocr_bg_photo = ImageTk.PhotoImage(bg_image)
         self.ocr_bg_id = self.canvas.create_image(text_x, text_y, anchor='nw', image=self.ocr_bg_photo)
         # 创建文本
-        self.ocr_text_id = self.canvas.create_text(text_x, text_y, text=result, anchor='nw', fill='red', font=('Arial', 12))
+        self.ocr_text_id = self.canvas.create_text(text_x, text_y, text=result, anchor='nw', fill='white', font=('Arial', 12))
         # 放到剪贴板
         self.root.clipboard_clear()
         self.root.clipboard_append(result)
@@ -120,7 +127,17 @@ class SnippingTool:
         if self.last_result == "":
             self.perform_ocr()
         self.root.withdraw()
+        if self.last_result != "":
+            text = self.last_result
+            tts = gTTS(text=text, lang='ja')
+            fp = io.BytesIO()
+            tts.write_to_fp(fp)
+            fp.seek(0)
+
+            pygame.mixer.music.load(fp)
+            pygame.mixer.music.play()
         self.last_result = ""
+        self.fullscreen_img = None
 
     def on_cancel(self, event):
         # 取消定时器
@@ -137,6 +154,7 @@ class SnippingTool:
             self.ocr_bg_photo = None
         self.last_result = ""
         self.root.withdraw()
+        self.fullscreen_img = None
 
     def create_tray_icon(self):
         """Create system tray icon."""

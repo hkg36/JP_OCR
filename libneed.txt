@@ -4,3 +4,4 @@ pystray
 transformers
 loguru
 Pillow
+gtts
