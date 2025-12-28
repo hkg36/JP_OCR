@@ -4,4 +4,4 @@ pystray
 transformers
 loguru
 Pillow
-gtts
+httpx

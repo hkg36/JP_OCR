@@ -8,7 +8,7 @@ import pystray
 import win32api, win32con, winerror, win32event
 import os
 import ocr
-from gtts import gTTS
+import gTTSfun
 import pygame
 import io
 import os
@@ -131,9 +131,7 @@ class SnippingTool:
         if self.last_result != "":
             try:
                 text = self.last_result
-                tts = gTTS(text=text, lang='ja')
-                fp = io.BytesIO()
-                tts.write_to_fp(fp)
+                fp = gTTSfun.japanese_tts(text=text)
                 self.last_sound = fp
                 self.last_sound.seek(0)
 
