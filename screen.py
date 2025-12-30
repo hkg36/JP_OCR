@@ -11,10 +11,6 @@ import ocr
 import gTTSfun
 import pygame
 import io
-import os
-
-os.environ['http_proxy'] = 'http://127.0.0.1:10808'
-os.environ['https_proxy'] = 'http://127.0.0.1:10808'
 
 Single_mutex = None
 
@@ -214,7 +210,6 @@ if __name__ == "__main__":
         print("另一个实例已在运行。")
         sys.exit(1)
     enable_dpi_awareness()
-    # 显示初始化提示
     tool = SnippingTool()
     tool.create_tray_icon()
     def on_activate():

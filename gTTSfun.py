@@ -1,6 +1,5 @@
 import httpx
 from io import BytesIO
-from pydub import AudioSegment
 import re
 
 proxy = "http://127.0.0.1:10808"
