@@ -140,13 +140,14 @@ class SnippingTool:
             pygame.mixer.music.play()
         except Exception as e:
             print("语音播放失败:", e)
-    def on_replay(self, event):
+    def replay_sound(self):
         try:
-            if self.last_sound:
-                pygame.mixer.music.rewind()
-                pygame.mixer.music.play()
+            pygame.mixer.music.rewind()
+            pygame.mixer.music.play()
         except Exception as e:
             print("语音播放失败:", e)
+    def on_replay(self, event):
+        self.executor.submit(self.replay_sound)
     def on_cancel(self, event):
         # 取消定时器
         if self.ocr_timer:
