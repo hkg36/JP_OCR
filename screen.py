@@ -11,6 +11,7 @@ import ocr
 import gTTSfun
 import pygame
 import io
+from concurrent.futures import ThreadPoolExecutor
 
 Single_mutex = None
 
@@ -32,6 +33,7 @@ class SnippingTool:
         self.last_result = ""
         pygame.mixer.init()
         self.last_sound = None
+        self.executor = ThreadPoolExecutor(max_workers=1)
     def start_snip(self):
         if self.canvas:
             self.canvas.destroy()
@@ -125,18 +127,19 @@ class SnippingTool:
             self.perform_ocr()
         self.root.withdraw()
         if self.last_result != "":
-            try:
-                text = self.last_result
-                fp = gTTSfun.japanese_tts(text=text)
-                self.last_sound = fp
-                self.last_sound.seek(0)
-
-                pygame.mixer.music.load(self.last_sound)
-                pygame.mixer.music.play()
-            except Exception as e:
-                print("语音播放失败:", e)
+            self.executor.submit(self.goPlaySound, self.last_result)
         self.last_result = ""
         self.fullscreen_img = None
+    def goPlaySound(self, sound_text):
+        try:
+            fp = gTTSfun.japanese_tts(text=sound_text)
+            sound = fp
+            sound.seek(0)
+
+            pygame.mixer.music.load(sound)
+            pygame.mixer.music.play()
+        except Exception as e:
+            print("语音播放失败:", e)
     def on_replay(self, event):
         try:
             if self.last_sound:
@@ -181,6 +184,7 @@ class SnippingTool:
             self.tray_icon.stop()
         if self.listener:
             self.listener.stop()
+        self.executor.shutdown(wait=True)
         self.root.after(0, self.root.quit)
 def check_single_instance():
     """Check if another instance is running and prevent multiple instances."""
