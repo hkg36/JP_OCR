@@ -30,11 +30,14 @@ class SnippingTool:
         self.ocr_text_id = None
         self.ocr_bg_id = None
         self.ocr_bg_photo = None
+        self.fullscreen_img = None
         self.last_result = ""
         pygame.mixer.init()
         self.last_sound = None
         self.executor = ThreadPoolExecutor(max_workers=1)
     def start_snip(self):
+        if self.fullscreen_img is not None:
+            return  # 已经在截图中
         if self.canvas:
             self.canvas.destroy()
         self.fullscreen_img = ImageGrab.grab()
