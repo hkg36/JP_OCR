@@ -4,7 +4,7 @@ from pathlib import Path
 
 TEST_DATA_ROOT = Path(__file__).parent / "test_data"
 
-mocr = ocr.MangaOcr()
+mocr = ocr.MangaOcr(local_files_only=False)
 
 expected_results = json.loads((TEST_DATA_ROOT / "expected_results.json").read_text(encoding="utf-8"))
 

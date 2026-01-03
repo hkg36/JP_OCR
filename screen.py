@@ -225,11 +225,34 @@ if __name__ == "__main__":
     def on_replay():
         tool.on_replay(None)
     
-    listener = keyboard.GlobalHotKeys({
+    """listener = keyboard.GlobalHotKeys({
         '<alt>+q': on_activate,
         '<alt>+w': on_replay,
     })
-    tool.listener = listener
+    tool.listener = listener"""
+    def on_press(key):
+        global alt_pressed
+        try:
+            if key == keyboard.Key.alt or key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
+                alt_pressed = True
+                return  # 不 suppress，继续正常行为
+            elif alt_pressed:
+                if key.char == 'q':
+                    print("Alt + q 触发！")
+                    on_activate()
+                elif key.char == 'w':
+                    print("Alt + w 触发！")
+                    on_replay()
+                alt_pressed = False  # 重置（简化，按需调整）
+        except AttributeError:
+            pass
+        return True  # 允许事件通过
+    alt_pressed = False
+    def on_release(key):
+        global alt_pressed
+        if key == keyboard.Key.alt or key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
+            alt_pressed = False
+    listener=keyboard.Listener(on_press=on_press, on_release=on_release, suppress=False)
     listener.start()
     
     tool.root.mainloop()
