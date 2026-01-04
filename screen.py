@@ -12,6 +12,7 @@ import gTTSfun
 import pygame
 import io
 from concurrent.futures import ThreadPoolExecutor
+import config
 
 Single_mutex = None
 
@@ -30,6 +31,9 @@ class SnippingTool:
         self.ocr_text_id = None
         self.ocr_bg_id = None
         self.ocr_bg_photo = None
+        self.translate_text_id = None
+        self.translate_bg_id = None
+        self.translate_bg_photo = None
         self.fullscreen_img = None
         self.last_result = ""
         pygame.mixer.init()
@@ -87,6 +91,8 @@ class SnippingTool:
         screenshot = self.fullscreen_img.crop((x1, y1, x2, y2))
         # 执行 OCR
         result = self.mocr(screenshot)
+        if self.last_result == result:
+            return  # 结果未变化，跳过更新
         self.last_result = result
         # 删除之前的文本和背景
         if self.ocr_text_id:
@@ -111,21 +117,51 @@ class SnippingTool:
         # 放到剪贴板
         self.root.clipboard_clear()
         self.root.clipboard_append(result)
+        self.start_translate(result)
         print("OCR 结果：", result)
-
+    def start_translate(self, text):
+        res=self.executor.submit(self.go_translate, text)
+        res.add_done_callback(self._on_translate_done)
+    def _on_translate_done(self, future):
+        try:
+            translated_text = future.result()
+            self.root.after(0, self.on_translate_done, translated_text)
+        except Exception as e:
+            print("翻译失败:", e)
+    def on_translate_done(self,text):
+        if self.fullscreen_img is None:
+            return
+        #取得ocr_text_id的位置，翻译结果显示在其下方左对齐
+        ocr_text_id_bbox = self.canvas.bbox(self.ocr_text_id)
+        text_x = ocr_text_id_bbox[0]
+        text_y = ocr_text_id_bbox[3] + 12
+        #删除之前的翻译文本和背景
+        if self.translate_text_id:
+            self.canvas.delete(self.translate_text_id)
+        if self.translate_bg_id:
+            self.canvas.delete(self.translate_bg_id)
+        #创建临时文本获取 bbox
+        temp_id = self.canvas.create_text(text_x, text_y, text=text, anchor='nw', fill='red', font=('Arial', 12))
+        bbox = self.canvas.bbox(temp_id)
+        self.canvas.delete(temp_id)
+        width = bbox[2] - bbox[0]
+        height = bbox[3] - bbox[1]
+        #创建半透明灰色背景
+        bg_image = Image.new('RGBA', (width, height), (0, 0, 0, 255))
+        self.translate_bg_photo = ImageTk.PhotoImage(bg_image)
+        self.translate_bg_id = self.canvas.create_image(text_x, text_y, anchor='nw', image=self.translate_bg_photo)
+        #创建翻译文本
+        self.translate_text_id = self.canvas.create_text(text_x, text_y, text=text, anchor='nw', fill='white', font=('Arial', 12))
+        print("翻译结果：", text)
+    def go_translate(self, text):
+        try:
+            translated_text = gTTSfun.translate_with_api_key(text=text, target="zh-CN", api_key=config.gcloud_api_key)
+            return translated_text
+        except Exception as e:
+            print("翻译失败:", e)
+            return text
     def on_button_release(self, event):
-        # 取消定时器
-        if self.ocr_timer:
-            self.root.after_cancel(self.ocr_timer)
-            self.ocr_timer = None
-        # 删除文本和背景
-        if self.ocr_text_id:
-            self.canvas.delete(self.ocr_text_id)
-            self.ocr_text_id = None
-        if self.ocr_bg_id:
-            self.canvas.delete(self.ocr_bg_id)
-            self.ocr_bg_id = None
-            self.ocr_bg_photo = None
+        self.cleanup_controls()
         if self.last_result == "":
             self.perform_ocr()
         self.root.withdraw()
@@ -152,6 +188,11 @@ class SnippingTool:
     def on_replay(self, event):
         self.executor.submit(self.replay_sound)
     def on_cancel(self, event):
+        self.cleanup_controls()
+        self.last_result = ""
+        self.root.withdraw()
+        self.fullscreen_img = None
+    def cleanup_controls(self):
         # 取消定时器
         if self.ocr_timer:
             self.root.after_cancel(self.ocr_timer)
@@ -160,14 +201,17 @@ class SnippingTool:
         if self.ocr_text_id:
             self.canvas.delete(self.ocr_text_id)
             self.ocr_text_id = None
+        if self.translate_text_id:
+            self.canvas.delete(self.translate_text_id)
+            self.translate_text_id = None
         if self.ocr_bg_id:
             self.canvas.delete(self.ocr_bg_id)
             self.ocr_bg_id = None
             self.ocr_bg_photo = None
-        self.last_result = ""
-        self.root.withdraw()
-        self.fullscreen_img = None
-
+        if self.translate_bg_id:
+            self.canvas.delete(self.translate_bg_id)
+            self.translate_bg_id = None
+            self.translate_bg_photo = None
     def create_tray_icon(self):
         """Create system tray icon."""
         image = Image.open("data/tray.png")

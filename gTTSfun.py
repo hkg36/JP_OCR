@@ -4,6 +4,11 @@ import re
 
 proxy = "http://127.0.0.1:10808"
 session = None
+def get_session():
+    global session
+    if session is None:
+        session = httpx.Client(timeout=10.0,http2=True,proxy=proxy)
+    return session
 def japanese_tts(text: str) -> BytesIO:
     """
     将日语文本转换为语音，返回 BytesIO 对象。
@@ -21,20 +26,35 @@ def japanese_tts(text: str) -> BytesIO:
         "tl": "ja",
         "ttsspeed": "1"
     }
-    global session,proxy
-    if session is None:
-        session = httpx.Client(timeout=10.0,http2=True,proxy=proxy)
+    session = get_session()
     params = params_base.copy()
     params["q"] = text
     response = session.get(url, params=params)
     response.raise_for_status()
     output=BytesIO(response.content)
     return output
-
+def translate_with_api_key(text="Hello, world!", target="zh-CN", api_key="YOUR_API_KEY_HERE"):
+    url = "https://translation.googleapis.com/language/translate/v2"
+    params = {
+        "q": text,
+        "target": target,
+        "key": api_key
+    }
+    session = get_session()
+    response = session.post(url, data=params)
+    response.raise_for_status()
+    
+    result = response.json()
+    translated_text = result["data"]["translations"][0]["translatedText"]
+    return translated_text
 if __name__ == "__main__":
     import pygame
+    import config
     # 示例使用
-    audio = japanese_tts("こんにちは、世界。今日はいい天気です。")
+    srctext="こんにちは、世界。今日はいい天気です。"
+    translated_text = translate_with_api_key(text=srctext, target="zh-CN", api_key=config.gcloud_api_key)
+    print(f"翻译结果: {translated_text}")
+    audio = japanese_tts(srctext)
     # with open("output.mp3", "wb") as f:
     #     f.write(audio.getvalue())
     pygame.mixer.init()
