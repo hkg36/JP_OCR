@@ -41,7 +41,9 @@ class SnippingTool:
         self.executor = ThreadPoolExecutor(max_workers=1)
     def start_snip(self):
         if self.fullscreen_img is not None:
-            return  # 已经在截图中
+            # 已经在截图中就结束截图
+            self.on_cancel(None)
+            return  
         if self.canvas:
             self.canvas.destroy()
         self.fullscreen_img = ImageGrab.grab()
