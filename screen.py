@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 import config
 
 Single_mutex = None
-
+fontname="微软雅黑"
 class SnippingTool:
     def __init__(self):
         self.root = tk.Tk()
@@ -89,6 +89,9 @@ class SnippingTool:
         # 获取当前矩形坐标
         coords = self.canvas.coords(self.rect)
         x1, y1, x2, y2 = coords
+        #区域不可太小
+        if abs(x2 - x1) < 10 or abs(y2 - y1) < 10:
+            return
         # 裁剪截图
         screenshot = self.fullscreen_img.crop((x1, y1, x2, y2))
         # 执行 OCR
@@ -104,8 +107,10 @@ class SnippingTool:
         # 显示文本在矩形下方靠左
         text_x = x1
         text_y = y2 + 10
+        # 计算最大宽度以避免文本超出屏幕右侧
+        max_width = self.photo.width() - text_x
         # 临时创建文本获取 bbox
-        temp_id = self.canvas.create_text(text_x, text_y, text=result, anchor='nw', fill='red', font=('Arial', 12))
+        temp_id = self.canvas.create_text(text_x, text_y, text=result, anchor='nw', fill='red', font=(fontname, 14), width=max_width)
         bbox = self.canvas.bbox(temp_id)
         self.canvas.delete(temp_id)
         width = bbox[2] - bbox[0]
@@ -115,7 +120,7 @@ class SnippingTool:
         self.ocr_bg_photo = ImageTk.PhotoImage(bg_image)
         self.ocr_bg_id = self.canvas.create_image(text_x, text_y, anchor='nw', image=self.ocr_bg_photo)
         # 创建文本
-        self.ocr_text_id = self.canvas.create_text(text_x, text_y, text=result, anchor='nw', fill='white', font=('Arial', 12))
+        self.ocr_text_id = self.canvas.create_text(text_x, text_y, text=result, anchor='nw', fill='white', font=(fontname, 14), width=max_width)
         # 放到剪贴板
         self.root.clipboard_clear()
         self.root.clipboard_append(result)
@@ -136,14 +141,16 @@ class SnippingTool:
         #取得ocr_text_id的位置，翻译结果显示在其下方左对齐
         ocr_text_id_bbox = self.canvas.bbox(self.ocr_text_id)
         text_x = ocr_text_id_bbox[0]
-        text_y = ocr_text_id_bbox[3] + 12
+        text_y = ocr_text_id_bbox[3] + 3
+        # 计算最大宽度以避免文本超出屏幕右侧
+        max_width = self.photo.width() - text_x
         #删除之前的翻译文本和背景
         if self.translate_text_id:
             self.canvas.delete(self.translate_text_id)
         if self.translate_bg_id:
             self.canvas.delete(self.translate_bg_id)
         #创建临时文本获取 bbox
-        temp_id = self.canvas.create_text(text_x, text_y, text=text, anchor='nw', fill='red', font=('Arial', 12))
+        temp_id = self.canvas.create_text(text_x, text_y, text=text, anchor='nw', fill='red', font=(fontname, 14), width=max_width)
         bbox = self.canvas.bbox(temp_id)
         self.canvas.delete(temp_id)
         width = bbox[2] - bbox[0]
@@ -153,7 +160,7 @@ class SnippingTool:
         self.translate_bg_photo = ImageTk.PhotoImage(bg_image)
         self.translate_bg_id = self.canvas.create_image(text_x, text_y, anchor='nw', image=self.translate_bg_photo)
         #创建翻译文本
-        self.translate_text_id = self.canvas.create_text(text_x, text_y, text=text, anchor='nw', fill='white', font=('Arial', 12))
+        self.translate_text_id = self.canvas.create_text(text_x, text_y, text=text, anchor='nw', fill='white', font=(fontname, 14), width=max_width)
         print("翻译结果：", text)
     def go_translate(self, text):
         try:
