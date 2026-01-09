@@ -1,20 +1,33 @@
+import win32api, winerror, win32event
+Single_mutex = None
+def check_single_instance():
+    """Check if another instance is running and prevent multiple instances."""
+    global Single_mutex
+    MUTEX_NAME = "Global\\SnippingTool_SingleInstance_v1.0" 
+    try:
+        Single_mutex = win32event.CreateMutex(None, False, MUTEX_NAME)
+        if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
+            return False
+    except Exception as ae:
+        print("检查单实例失败:", ae)
+        return False
+    return True
+if __name__ == "__main__":
+    if not check_single_instance():
+        print("另一个实例已在运行。")
+        sys.exit(1)
 import ctypes
 import sys
 import tkinter as tk
 from PIL import ImageGrab, ImageTk, Image
-import time
 from pynput import keyboard
 import pystray
-import win32api, win32con, winerror, win32event
-import os
 import ocr
 import gTTSfun
 import pygame
-import io
 from concurrent.futures import ThreadPoolExecutor
 import config
 
-Single_mutex = None
 fontname="微软雅黑"
 class SnippingTool:
     def __init__(self):
@@ -168,7 +181,7 @@ class SnippingTool:
             return translated_text
         except Exception as e:
             print("翻译失败:", e)
-            return text
+            return f"翻译失败: {str(e)}"
     def on_button_release(self, event):
         self.cleanup_controls()
         if self.last_result == "":
@@ -243,18 +256,6 @@ class SnippingTool:
             self.listener.stop()
         self.executor.shutdown(wait=True)
         self.root.after(0, self.root.quit)
-def check_single_instance():
-    """Check if another instance is running and prevent multiple instances."""
-    global Single_mutex
-    MUTEX_NAME = "Global\\SnippingTool_SingleInstance_v1.0" 
-    try:
-        Single_mutex = win32event.CreateMutex(None, False, MUTEX_NAME)
-        if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
-            return False
-    except Exception as ae:
-        print("检查单实例失败:", ae)
-        return False
-    return True
 def enable_dpi_awareness():
     """Ensure Windows reports real pixel sizes; otherwise Tk coords and PIL screenshot diverge."""
     if not sys.platform.startswith("win"):
@@ -267,9 +268,6 @@ def enable_dpi_awareness():
         except Exception:
             pass
 if __name__ == "__main__":
-    if not check_single_instance():
-        print("另一个实例已在运行。")
-        sys.exit(1)
     enable_dpi_awareness()
     tool = SnippingTool()
     tool.create_tray_icon()
