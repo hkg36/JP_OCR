@@ -3,7 +3,7 @@ import zipfile
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
                                QVBoxLayout, QLabel, QFileDialog, QSizePolicy)
 from PySide6.QtGui import QPixmap, QAction, QKeyEvent
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 class ComicReader(QMainWindow):
     def __init__(self):
@@ -14,6 +14,13 @@ class ComicReader(QMainWindow):
         self.scale_factor = 1.0
         self.original_pixmaps = []  # 存储原始 QPixmap
         self.image_labels = []      # 存储 QLabel 引用
+        
+        # 异步加载相关
+        self.load_timer = QTimer(self)
+        self.load_timer.timeout.connect(self.load_next_image)
+        self.current_zip = None
+        self.pending_files = [] 
+
 
         # 主滚动区域
         self.scroll_area = QScrollArea()
@@ -45,7 +52,21 @@ class ComicReader(QMainWindow):
         # 启动时最大化
         self.showMaximized()
 
+    def closeEvent(self, event):
+        self.cleanup()
+        super().closeEvent(event)
+
+    def cleanup(self):
+        self.load_timer.stop()
+        self.pending_files = []
+        self.original_pixmaps = []
+        self.image_labels = []
+        if self.current_zip:
+            self.current_zip.close()
+            self.current_zip = None
+
     def setup_empty_content(self):
+
         # 创建一个空的容器
         self.content_widget = QWidget()
         self.layout = QVBoxLayout(self.content_widget)
@@ -59,47 +80,91 @@ class ComicReader(QMainWindow):
             self.load_zip(file_path)
 
     def load_zip(self, file_path):
-        # 读取数据
-        new_pixmaps = []
+        # 清理旧状态
+        self.cleanup()
+
         try:
-            with zipfile.ZipFile(file_path, 'r') as zf:
-                # 筛选图片文件
-                # 简单过滤常见扩展名
-                image_files = [f for f in zf.namelist() if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif'))]
-                # 排序，保证漫画顺序正确
-                try:
-                    # 尝试按数字排序 (如果文件名包含数字)
-                    # 这里做一个简单的处理，如果只是纯文件名排序用默认 sort
-                    image_files.sort()
-                except:
-                    pass
-                
-                if not image_files:
-                    return
+            # 保持 zip 文件打开，直到加载完成或关闭
+            self.current_zip = zipfile.ZipFile(file_path, 'r')
+            image_files = [f for f in self.current_zip.namelist() if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif'))]
+            
+            try:
+                image_files.sort()
+            except:
+                pass
+            
+            if not image_files:
+                print("未找到有效图片")
+                return
 
-                for img_name in image_files:
-                    data = zf.read(img_name)
-                    pixmap = QPixmap()
-                    if pixmap.loadFromData(data):
-                        new_pixmaps.append(pixmap)
+            self.pending_files = image_files
+            
         except Exception as e:
-            print(f"读取 ZIP 出错: {e}")
+            print(f"打开 ZIP 出错: {e}")
+            if self.current_zip:
+                self.current_zip.close()
+                self.current_zip = None
             return
 
-        if not new_pixmaps:
-            print("未找到有效图片")
-            return
-
-        # 更新数据
-        self.original_pixmaps = new_pixmaps
-        self.scale_factor = 1.0 # 重置缩放
+        self.scale_factor = 1.0 
         self.setWindowTitle(f"漫画阅读器 - {file_path}")
         
-        # 重建 UI
+        # 重建 UI 容器
         self.setup_comic_content()
-        self.update_images()
+        # 启动计时器加载图片，间隔0表示尽快执行
+        self.load_timer.start(0)
+
+    def load_next_image(self):
+        if not self.pending_files or not self.current_zip:
+            self.load_timer.stop()
+            return
+        
+        # 每次处理一张，避免 UI 卡顿
+        # 如果图片很小，可以尝试每次处理多张
+        img_name = self.pending_files.pop(0)
+        
+        try:
+            data = self.current_zip.read(img_name)
+            pixmap = QPixmap()
+            if pixmap.loadFromData(data):
+                self.original_pixmaps.append(pixmap)
+                
+                # 创建对应的 Label
+                label = QLabel()
+                label.setAlignment(Qt.AlignCenter)
+                label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+                
+                # 计算初始缩放
+                width = int(pixmap.width() * self.scale_factor)
+                height = int(pixmap.height() * self.scale_factor)
+                scaled_pixmap = pixmap.scaled(
+                    width, height, 
+                    Qt.KeepAspectRatio, 
+                    Qt.SmoothTransformation
+                )
+                label.setPixmap(scaled_pixmap)
+                label.setFixedSize(width, height)
+                
+                self.layout.addWidget(label)
+                self.image_labels.append(label)
+                
+        except Exception as e:
+            print(f"加载图片出错 {img_name}: {e}")
+
+        # 检查是否全部加载完成
+        if not self.pending_files:
+            self.load_timer.stop()
+            # 可以选择关闭 zip，也可以保留以备后用（当前逻辑是全部读入内存，所以可以关闭）
+            # 但考虑到如果我们要支持 Lazy Load (真·不占内存)，则需保留。
+            # 目前需求是“不解压到硬盘”，内存占用如果不介意的话，现在这样是可以的。
+            # 这里的瓶颈主要是 pixmap.loadFromData 解码耗时。
+            # 加载完成后关闭 zip
+            if self.current_zip:
+                self.current_zip.close()
+                self.current_zip = None
 
     def setup_comic_content(self):
+
         # 销毁旧 widget，创建新 widget
         # 这样比一个个删除 layout item 更干净
         if self.content_widget:
