@@ -1,5 +1,6 @@
 import sys
 import zipfile
+import natsort as ns
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
                                QVBoxLayout, QLabel, QFileDialog, QSizePolicy)
 from PySide6.QtGui import QPixmap, QAction, QKeyEvent
@@ -89,7 +90,7 @@ class ComicReader(QMainWindow):
             image_files = [f for f in self.current_zip.namelist() if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif'))]
             
             try:
-                image_files.sort()
+                image_files=ns.natsorted(image_files, alg=ns.IGNORECASE|ns.PATH)
             except:
                 pass
             

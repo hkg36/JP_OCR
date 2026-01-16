@@ -6,5 +6,5 @@ transformers
 loguru
 Pillow
 httpx
-PyQt6
 PySide6
+natsort

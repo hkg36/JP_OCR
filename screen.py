@@ -109,8 +109,6 @@ class SnippingTool:
         screenshot = self.fullscreen_img.crop((x1, y1, x2, y2))
         # 执行 OCR
         result = self.mocr(screenshot)
-        if self.last_result == result:
-            return  # 结果未变化，跳过更新
         self.last_result = result
         # 删除之前的文本和背景
         if self.ocr_text_id:
