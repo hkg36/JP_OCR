@@ -1,4 +1,5 @@
 import sys
+import os
 import zipfile
 import natsort as ns
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
@@ -17,6 +18,8 @@ class ComicReader(QMainWindow):
         # 状态变量
         self.original_pixmaps = []  # 存储原始 QPixmap
         self.current_page_index = 0
+        self.zip_file_list = []
+        self.current_zip_index = -1
         
         # 异步加载相关
         self.load_timer = QTimer(self)
@@ -41,6 +44,14 @@ class ComicReader(QMainWindow):
         # 允许 Label 调整大小
         self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.scroll_area.setWidget(self.image_label)
+
+        # 文件名显示 Label
+        self.filename_label = QLabel(self)
+        self.filename_label.setFixedWidth(300)
+        self.filename_label.setWordWrap(True)
+        self.filename_label.setStyleSheet("QLabel { background-color: rgba(0, 0, 0, 160); color: white; padding: 8px; border-radius: 4px; font-size: 14px; }")
+        self.filename_label.move(10, 10)
+        self.filename_label.hide()
 
         # 启动时最大化
         self.showMaximized()
@@ -71,6 +82,7 @@ class ComicReader(QMainWindow):
 
     def resizeEvent(self, event):
         self.show_current_page()
+        self.filename_label.raise_()
         super().resizeEvent(event)
 
     def cleanup(self):
@@ -84,11 +96,52 @@ class ComicReader(QMainWindow):
     def open_zip_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "选择漫画压缩包", "E:/baks", "ZIP Files (*.zip);;All Files (*)")
         if file_path:
+            # 获取同目录下的所有 ZIP 文件
+            try:
+                folder = os.path.dirname(file_path)
+                files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith('.zip')]
+                # 排序
+                self.zip_file_list = ns.natsorted(files, alg=ns.IGNORECASE|ns.PATH)
+                
+                # 确定当前文件索引
+                abs_target = os.path.abspath(file_path)
+                abs_list = [os.path.abspath(p) for p in self.zip_file_list]
+                
+                if abs_target in abs_list:
+                    self.current_zip_index = abs_list.index(abs_target)
+                else:
+                    self.zip_file_list = [file_path]
+                    self.current_zip_index = 0
+            except Exception as e:
+                print(f"列表生成失败: {e}")
+                self.zip_file_list = [file_path]
+                self.current_zip_index = 0
+
             self.load_zip(file_path)
+
+    def load_prev_zip(self):
+        if self.current_zip_index > 0:
+            self.current_zip_index -= 1
+            self.load_zip(self.zip_file_list[self.current_zip_index])
+        else:
+            print("已经是第一个文件")
+
+    def load_next_zip(self):
+        if self.current_zip_index < len(self.zip_file_list) - 1:
+            self.current_zip_index += 1
+            self.load_zip(self.zip_file_list[self.current_zip_index])
+        else:
+            print("已经是最后一个文件")
 
     def load_zip(self, file_path):
         # 清理旧状态
         self.cleanup()
+        
+        # 显示文件名
+        self.filename_label.setText(os.path.basename(file_path))
+        self.filename_label.adjustSize()
+        self.filename_label.show()
+        self.filename_label.raise_()
 
         try:
             self.current_zip = zipfile.ZipFile(file_path, 'r')
@@ -100,7 +153,12 @@ class ComicReader(QMainWindow):
                 pass
             
             if not image_files:
-                self.image_label.setText("未找到有效图片")
+                self.image_label.setText("未找到有效图片，尝试下一个...")
+                # 自动跳转下一个
+                if self.current_zip_index < len(self.zip_file_list) - 1:
+                    QTimer.singleShot(10, self.load_next_zip) # 使用Timer稍微延后，避免递归过深
+                else:
+                    self.image_label.setText("没有图片了")
                 return
 
             self.pending_files = image_files
@@ -193,6 +251,12 @@ class ComicReader(QMainWindow):
             event.accept()
         elif key == Qt.Key_Right:
             self.next_page()
+            event.accept()
+        elif key == Qt.Key_Up:
+            self.load_prev_zip()
+            event.accept()
+        elif key == Qt.Key_Down:
+            self.load_next_zip()
             event.accept()
         elif key == Qt.Key_Escape:
             self.close()
