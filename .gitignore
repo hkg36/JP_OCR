@@ -3,3 +3,4 @@ __pycache__/
 try*.py
 conf.ini
 *.lnk
+tmp/

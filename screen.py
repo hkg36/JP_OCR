@@ -18,6 +18,14 @@ if __name__ == "__main__":
         sys.exit(1)
 import ctypes
 import sys
+import os
+
+# 修复 pythonw 运行时 sys.stdout 为 None 导致 transformers 库 crash 的问题
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w')
+
 import tkinter as tk
 from PIL import ImageGrab, ImageTk, Image
 from pynput import keyboard
@@ -27,6 +35,8 @@ import gTTSfun
 import pygame
 from concurrent.futures import ThreadPoolExecutor
 import config
+import traceback
+import datetime
 
 fontname="微软雅黑"
 class SnippingTool:
@@ -265,7 +275,7 @@ def enable_dpi_awareness():
             ctypes.windll.user32.SetProcessDPIAware()  # Fallback for older Windows
         except Exception:
             pass
-if __name__ == "__main__":
+try:
     enable_dpi_awareness()
     tool = SnippingTool()
     tool.create_tray_icon()
@@ -308,3 +318,12 @@ if __name__ == "__main__":
     listener.start()
     
     tool.root.mainloop()
+except Exception as e:
+    print("\n" + "="*60)
+    print("发生未捕获异常！")
+    print(traceback.format_exc())
+    print("="*60)
+    # 可以选择把错误写文件
+    with open("tmp/error.log", "a", encoding="utf-8") as f:
+        f.write(f"\n{datetime.datetime.now()}\n{traceback.format_exc()}\n")
+    raise  # 或者 input("按回车退出...") 看一眼
