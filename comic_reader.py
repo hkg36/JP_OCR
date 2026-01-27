@@ -5,7 +5,7 @@ import natsort as ns
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
                                QVBoxLayout, QLabel, QFileDialog, QSizePolicy, QMenu)
 from PySide6.QtGui import QPixmap, QAction, QKeyEvent, QWheelEvent, QMouseEvent, QCursor
-from PySide6.QtCore import Qt, QTimer, QEvent
+from PySide6.QtCore import Qt, QTimer, QEvent, QFile
 
 class ComicReader(QMainWindow):
     def __init__(self):
@@ -16,17 +16,13 @@ class ComicReader(QMainWindow):
         self.setWindowFlags(Qt.FramelessWindowHint)
         
         # 状态变量
-        self.original_pixmaps = []  # 存储原始 QPixmap
+        self.pixmap_cache = {}  # 缓存 QPixmap {index: QPixmap}
+        self.image_files = []   # 所有图片文件名列表
         self.current_page_index = 0
         self.zip_file_list = []
         self.current_zip_index = -1
-        
-        # 异步加载相关
-        self.load_timer = QTimer(self)
-        self.load_timer.timeout.connect(self.load_process)
         self.current_zip = None
-        self.pending_files = [] 
-
+        
         # 主滚动区域
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -85,13 +81,70 @@ class ComicReader(QMainWindow):
         self.filename_label.raise_()
         super().resizeEvent(event)
 
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MiddleButton:
+            self.open_zip_dialog()
+            event.accept()
+        elif event.button() == Qt.LeftButton:
+            if self.current_zip:
+                self.next_page()
+            else:
+                self.open_zip_dialog()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
     def cleanup(self):
-        self.load_timer.stop()
-        self.pending_files = []
-        self.original_pixmaps = []
+        self.pixmap_cache = {}
+        self.image_files = []
         if self.current_zip:
             self.current_zip.close()
             self.current_zip = None
+
+    def delete_current_file(self):
+        if not self.zip_file_list:
+            return
+
+        if self.current_zip_index < 0 or self.current_zip_index >= len(self.zip_file_list):
+            return
+
+        file_to_delete = self.zip_file_list[self.current_zip_index]
+        self.cleanup() # 关闭文件句柄
+
+        try:
+            # os.remove(file_to_delete)
+            # 使用 QFile.moveToTrash 移动到回收站
+            if not QFile.moveToTrash(file_to_delete):
+                print(f"移动到回收站失败: {file_to_delete}")
+                # 恢复加载
+                if os.path.exists(file_to_delete):
+                     self.load_zip(file_to_delete)
+                return
+
+            print(f"已移动到回收站: {file_to_delete}")
+            
+            # 更新列表
+            del self.zip_file_list[self.current_zip_index]
+            
+            # 计算新的索引
+            if not self.zip_file_list:
+                # 列表空了
+                self.current_zip_index = -1
+                self.image_label.setText("没有文件了")
+                self.filename_label.hide()
+            else:
+                # 如果删除的是最后一个，索引前移，否则索引不变（即指向原来的下一个）
+                if self.current_zip_index >= len(self.zip_file_list):
+                    self.current_zip_index = len(self.zip_file_list) - 1
+                
+                # 加载新索引处的文件
+                self.load_zip(self.zip_file_list[self.current_zip_index])
+
+        except Exception as e:
+            print(f"删除失败: {e}")
+            # 恢复（尝试重新加载，如果没删掉的话）
+            if os.path.exists(file_to_delete):
+                 self.load_zip(file_to_delete)
 
     def open_zip_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "选择漫画压缩包", "E:/baks", "ZIP Files (*.zip);;All Files (*)")
@@ -161,7 +214,7 @@ class ComicReader(QMainWindow):
                     self.image_label.setText("没有图片了")
                 return
 
-            self.pending_files = image_files
+            self.image_files = image_files
             
         except Exception as e:
             print(f"打开 ZIP 出错: {e}")
@@ -172,39 +225,43 @@ class ComicReader(QMainWindow):
             return
 
         self.current_page_index = 0
-        self.load_timer.start(0)
+        self.load_images_around_current()
+        self.show_current_page()
 
-    def load_process(self):
-        if not self.pending_files or not self.current_zip:
-            self.load_timer.stop()
-            if self.current_zip:
-                self.current_zip.close()
-                self.current_zip = None
+    def load_images_around_current(self):
+        if not self.current_zip or not self.image_files:
             return
+
+        # 保留当前及前后2张图片
+        start_index = max(0, self.current_page_index - 1)
+        end_index = min(len(self.image_files) - 1, self.current_page_index + 1)
+        wanted_indices = set(range(start_index, end_index + 1))
         
-        img_name = self.pending_files.pop(0)
+        # 1. 移除不需要的缓存
+        for idx in list(self.pixmap_cache.keys()):
+            if idx not in wanted_indices:
+                del self.pixmap_cache[idx]
         
-        try:
-            data = self.current_zip.read(img_name)
-            pixmap = QPixmap()
-            if pixmap.loadFromData(data):
-                self.original_pixmaps.append(pixmap)
-                
-                # 如果是第一张图片，或者当前显示为空，立即显示
-                if len(self.original_pixmaps) == 1:
-                    self.show_current_page()
-                
-        except Exception as e:
-            print(f"加载图片出错 {img_name}: {e}")
+        # 2. 加载需要的图片
+        for idx in wanted_indices:
+            if idx not in self.pixmap_cache:
+                img_name = self.image_files[idx]
+                try:
+                    data = self.current_zip.read(img_name)
+                    pixmap = QPixmap()
+                    if pixmap.loadFromData(data):
+                        self.pixmap_cache[idx] = pixmap
+                except Exception as e:
+                    print(f"加载图片出错 {img_name}: {e}")
 
     def show_current_page(self):
-        if not self.original_pixmaps:
+        if not self.image_files:
             return
         
-        if 0 <= self.current_page_index < len(self.original_pixmaps):
-            original_pixmap = self.original_pixmaps[self.current_page_index]
+        if 0 <= self.current_page_index < len(self.image_files):
+            original_pixmap = self.pixmap_cache.get(self.current_page_index)
             
-            if original_pixmap.isNull():
+            if not original_pixmap or original_pixmap.isNull():
                 return
                 
             # 获取当前视口大小
@@ -224,7 +281,7 @@ class ComicReader(QMainWindow):
             self.image_label.adjustSize()
 
     def handle_wheel_event(self, event: QWheelEvent):
-        if not self.original_pixmaps:
+        if not self.image_files:
             return
             
         angle = event.angleDelta().y()
@@ -237,11 +294,13 @@ class ComicReader(QMainWindow):
     def prev_page(self):
         if self.current_page_index > 0:
             self.current_page_index -= 1
+            self.load_images_around_current()
             self.show_current_page()
 
     def next_page(self):
-        if self.current_page_index < len(self.original_pixmaps) - 1:
+        if self.current_page_index < len(self.image_files) - 1:
             self.current_page_index += 1
+            self.load_images_around_current()
             self.show_current_page()
 
     def keyPressEvent(self, event: QKeyEvent):
@@ -258,6 +317,9 @@ class ComicReader(QMainWindow):
         elif key == Qt.Key_Down:
             self.load_next_zip()
             event.accept()
+        elif key == Qt.Key_Delete:
+             self.delete_current_file()
+             event.accept()
         elif key == Qt.Key_Escape:
             self.close()
         else:
