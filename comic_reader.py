@@ -3,7 +3,7 @@ import os
 import zipfile
 import natsort as ns
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
-                               QVBoxLayout, QLabel, QFileDialog, QSizePolicy, QMenu)
+                               QVBoxLayout, QLabel, QFileDialog, QSizePolicy, QMenu, QProgressBar)
 from PySide6.QtGui import QPixmap, QAction, QKeyEvent, QWheelEvent, QMouseEvent, QCursor
 from PySide6.QtCore import Qt, QTimer, QEvent, QFile
 
@@ -49,6 +49,22 @@ class ComicReader(QMainWindow):
         self.filename_label.move(10, 10)
         self.filename_label.hide()
 
+        # 进度条
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setFixedWidth(300)
+        self.progress_bar.setFixedHeight(2)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: none;
+                background-color: rgba(0, 0, 0, 160);
+            }
+            QProgressBar::chunk {
+                background-color: rgba(255, 100, 100, 200); 
+            }
+        """)
+        self.progress_bar.hide()
+
         # 启动时最大化
         self.showMaximized()
 
@@ -79,6 +95,7 @@ class ComicReader(QMainWindow):
     def resizeEvent(self, event):
         self.show_current_page()
         self.filename_label.raise_()
+        self.progress_bar.raise_()
         super().resizeEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent):
@@ -132,6 +149,7 @@ class ComicReader(QMainWindow):
                 self.current_zip_index = -1
                 self.image_label.setText("没有文件了")
                 self.filename_label.hide()
+                self.progress_bar.hide()
             else:
                 # 如果删除的是最后一个，索引前移，否则索引不变（即指向原来的下一个）
                 if self.current_zip_index >= len(self.zip_file_list):
@@ -196,6 +214,10 @@ class ComicReader(QMainWindow):
         self.filename_label.show()
         self.filename_label.raise_()
 
+        self.progress_bar.move(10, 12 + self.filename_label.height())
+        self.progress_bar.show()
+        self.progress_bar.raise_()
+
         try:
             self.current_zip = zipfile.ZipFile(file_path, 'r')
             image_files = [f for f in self.current_zip.namelist() if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif'))]
@@ -215,6 +237,8 @@ class ComicReader(QMainWindow):
                 return
 
             self.image_files = image_files
+            self.progress_bar.setRange(0, len(self.image_files))
+            self.progress_bar.setValue(0)
             
         except Exception as e:
             print(f"打开 ZIP 出错: {e}")
@@ -257,6 +281,9 @@ class ComicReader(QMainWindow):
     def show_current_page(self):
         if not self.image_files:
             return
+        
+        self.progress_bar.setRange(0, len(self.image_files))
+        self.progress_bar.setValue(self.current_page_index + 1)
         
         if 0 <= self.current_page_index < len(self.image_files):
             original_pixmap = self.pixmap_cache.get(self.current_page_index)
