@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 import zipfile
 import natsort as ns
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
@@ -22,6 +23,8 @@ class ComicReader(QMainWindow):
         self.zip_file_list = []
         self.current_zip_index = -1
         self.current_zip = None
+        
+        self.last_wheel_time = 0  # 上次滚轮翻页的时间
         
         # 主滚动区域
         self.scroll_area = QScrollArea()
@@ -310,6 +313,12 @@ class ComicReader(QMainWindow):
     def handle_wheel_event(self, event: QWheelEvent):
         if not self.image_files:
             return
+
+        # 限制翻页速度：1秒最多5页 -> 间隔至少0.2秒
+        current_time = time.time()
+        if current_time - self.last_wheel_time < 0.2:
+            return
+        self.last_wheel_time = current_time
             
         angle = event.angleDelta().y()
         # 向上滚动查看上一页，向下滚动查看下一页
