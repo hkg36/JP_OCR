@@ -341,25 +341,26 @@ class ComicReader(QMainWindow):
 
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
-        if key == Qt.Key_Left:
-            self.prev_page()
-            event.accept()
-        elif key == Qt.Key_Right:
-            self.next_page()
-            event.accept()
-        elif key == Qt.Key_Up:
-            self.load_prev_zip()
-            event.accept()
-        elif key == Qt.Key_Down:
-            self.load_next_zip()
-            event.accept()
-        elif key == Qt.Key_Delete:
-             self.delete_current_file()
-             event.accept()
-        elif key == Qt.Key_Escape:
-            self.close()
-        else:
-            super().keyPressEvent(event)
+        match key:
+            case Qt.Key_Left | Qt.Key_PageUp:
+                self.prev_page()
+                event.accept()
+            case Qt.Key_Right | Qt.Key_PageDown:
+                self.next_page()
+                event.accept()
+            case Qt.Key_Up:
+                self.load_prev_zip()
+                event.accept()
+            case Qt.Key_Down:
+                self.load_next_zip()
+                event.accept()
+            case Qt.Key_Delete:
+                 self.delete_current_file()
+                 event.accept()
+            case Qt.Key_Escape:
+                self.close()
+            case _:
+                super().keyPressEvent(event)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
