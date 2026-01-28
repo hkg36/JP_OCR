@@ -243,8 +243,6 @@ class ComicReader(QMainWindow):
 
         self.current_page_index = 0
         self.show_current_page()
-        #延迟加载前后图片
-        QTimer.singleShot(1, self.load_images_around_current)
 
     def load_images_around_current(self):
         if not self.current_zip or not self.image_files:
@@ -319,6 +317,8 @@ class ComicReader(QMainWindow):
                 Qt.SmoothTransformation
             )
             self.image_label.setPixmap(scaled_pixmap)
+        #延迟加载前后图片
+        QTimer.singleShot(0, self.load_images_around_current)
     def speed_curve(self,x):
         return 7/(1+math.exp(-3*(x-2)))+3
     def handle_wheel_event(self, event: QWheelEvent):
@@ -353,13 +353,11 @@ class ComicReader(QMainWindow):
     def prev_page(self):
         if self.current_page_index > 0:
             self.current_page_index -= 1
-            self.load_images_around_current()
             self.show_current_page()
 
     def next_page(self):
         if self.current_page_index < len(self.image_files) - 1:
             self.current_page_index += 1
-            self.load_images_around_current()
             self.show_current_page()
 
     def keyPressEvent(self, event: QKeyEvent):
