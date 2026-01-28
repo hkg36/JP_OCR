@@ -3,6 +3,7 @@ import os
 import time
 import zipfile
 import natsort as ns
+import math
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
                                QVBoxLayout, QLabel, QFileDialog, QSizePolicy, QMenu, QProgressBar)
 from PySide6.QtGui import QPixmap, QAction, QKeyEvent, QWheelEvent, QMouseEvent, QCursor
@@ -241,8 +242,9 @@ class ComicReader(QMainWindow):
             return
 
         self.current_page_index = 0
-        self.load_images_around_current()
         self.show_current_page()
+        #延迟加载前后图片
+        QTimer.singleShot(1, self.load_images_around_current)
 
     def load_images_around_current(self):
         if not self.current_zip or not self.image_files:
@@ -269,6 +271,23 @@ class ComicReader(QMainWindow):
                         self.pixmap_cache[idx] = pixmap
                 except Exception as e:
                     print(f"加载图片出错 {img_name}: {e}")
+    def load_image_at_index(self, index):
+        if not self.current_zip or not self.image_files:
+            return None
+
+        if index < 0 or index >= len(self.image_files):
+            return None
+
+        img_name = self.image_files[index]
+        try:
+            data = self.current_zip.read(img_name)
+            pixmap = QPixmap()
+            if pixmap.loadFromData(data):
+                self.pixmap_cache[index] = pixmap
+                return pixmap
+        except Exception as e:
+            print(f"加载图片出错 {img_name}: {e}")
+            return None
 
     def show_current_page(self):
         if not self.image_files:
@@ -281,7 +300,10 @@ class ComicReader(QMainWindow):
             original_pixmap = self.pixmap_cache.get(self.current_page_index)
             
             if not original_pixmap or original_pixmap.isNull():
-                return
+                original_pixmap = self.load_image_at_index(self.current_page_index)
+                if not original_pixmap:
+                    self.image_label.setText("无法加载图片")
+                    return
                 
             # 获取当前视口大小
             viewport_size = self.image_label.size()
@@ -297,7 +319,8 @@ class ComicReader(QMainWindow):
                 Qt.SmoothTransformation
             )
             self.image_label.setPixmap(scaled_pixmap)
-
+    def speed_curve(self,x):
+        return 7/(1+math.exp(-3*(x-2)))+3
     def handle_wheel_event(self, event: QWheelEvent):
         if not self.image_files:
             return
@@ -310,14 +333,10 @@ class ComicReader(QMainWindow):
 
         # 计算连续滚动的持续时间
         duration = current_time - self.scroll_start_time
+        speed=self.speed_curve(duration)
 
         # 根据 duration 动态设置速率限制
-        if duration < 1.0:
-            limit = 1.0 / 3  # 第一秒：每秒最多3页 (约0.33s间隔)
-        elif duration < 2.0:
-            limit = 1.0 / 6  # 第二秒：每秒最多6页 (约0.16s间隔)
-        else:
-            limit = 1.0 / 10 # 第三秒及以后：每秒最多10页 (0.1s间隔)
+        limit=1.0/speed
 
         if current_time - self.last_wheel_time < limit:
             return
