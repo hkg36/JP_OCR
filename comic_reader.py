@@ -25,6 +25,7 @@ class ComicReader(QMainWindow):
         self.current_zip = None
         
         self.last_wheel_time = 0  # 上次滚轮翻页的时间
+        self.scroll_start_time = 0  # 连续滚动开始时间
         
         # 初始内容
         self.image_label = QLabel("请右键点击 -> 打开 ZIP 加载漫画")
@@ -301,10 +302,26 @@ class ComicReader(QMainWindow):
         if not self.image_files:
             return
 
-        # 限制翻页速度：1秒最多5页 -> 间隔至少0.2秒
         current_time = time.time()
-        if current_time - self.last_wheel_time < 0.2:
+
+        # 如果距离上次翻页时间超过0.5秒，视为新的滚动操作，重置开始时间
+        if current_time - self.last_wheel_time > 0.5:
+            self.scroll_start_time = current_time
+
+        # 计算连续滚动的持续时间
+        duration = current_time - self.scroll_start_time
+
+        # 根据 duration 动态设置速率限制
+        if duration < 1.0:
+            limit = 1.0 / 3  # 第一秒：每秒最多3页 (约0.33s间隔)
+        elif duration < 2.0:
+            limit = 1.0 / 6  # 第二秒：每秒最多6页 (约0.16s间隔)
+        else:
+            limit = 1.0 / 10 # 第三秒及以后：每秒最多10页 (0.1s间隔)
+
+        if current_time - self.last_wheel_time < limit:
             return
+            
         self.last_wheel_time = current_time
             
         angle = event.angleDelta().y()
