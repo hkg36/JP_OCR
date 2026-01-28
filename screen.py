@@ -324,6 +324,6 @@ except Exception as e:
     print(traceback.format_exc())
     print("="*60)
     # 可以选择把错误写文件
-    with open("tmp/error.log", "a", encoding="utf-8") as f:
+    with open("error.log", "a", encoding="utf-8") as f:
         f.write(f"\n{datetime.datetime.now()}\n{traceback.format_exc()}\n")
     raise  # 或者 input("按回车退出...") 看一眼

@@ -26,23 +26,13 @@ class ComicReader(QMainWindow):
         
         self.last_wheel_time = 0  # 上次滚轮翻页的时间
         
-        # 主滚动区域
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setAlignment(Qt.AlignCenter) # 图片居中
-        self.scroll_area.setFocusPolicy(Qt.NoFocus)
-        
-        # 安装事件过滤器以拦截滚轮事件实现翻页
-        self.scroll_area.viewport().installEventFilter(self)
-        
-        self.setCentralWidget(self.scroll_area)
-
         # 初始内容
         self.image_label = QLabel("请右键点击 -> 打开 ZIP 加载漫画")
         self.image_label.setAlignment(Qt.AlignCenter)
         # 允许 Label 调整大小
         self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.scroll_area.setWidget(self.image_label)
+
+        self.setCentralWidget(self.image_label)
 
         # 文件名显示 Label
         self.filename_label = QLabel(self)
@@ -71,11 +61,9 @@ class ComicReader(QMainWindow):
         # 启动时最大化
         self.showMaximized()
 
-    def eventFilter(self, source, event):
-        if source == self.scroll_area.viewport() and event.type() == QEvent.Wheel:
-            self.handle_wheel_event(event)
-            return True # 消耗事件，防止 ScrollArea 滚动
-        return super().eventFilter(source, event)
+    def wheelEvent(self, event: QWheelEvent):
+        self.handle_wheel_event(event)
+        event.accept()
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -295,7 +283,7 @@ class ComicReader(QMainWindow):
                 return
                 
             # 获取当前视口大小
-            viewport_size = self.scroll_area.viewport().size()
+            viewport_size = self.image_label.size()
             
             # 避免视口尺寸无效
             if viewport_size.width() <= 0 or viewport_size.height() <= 0:
@@ -308,7 +296,6 @@ class ComicReader(QMainWindow):
                 Qt.SmoothTransformation
             )
             self.image_label.setPixmap(scaled_pixmap)
-            self.image_label.adjustSize()
 
     def handle_wheel_event(self, event: QWheelEvent):
         if not self.image_files:

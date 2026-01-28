@@ -4,3 +4,4 @@ try*.py
 conf.ini
 *.lnk
 tmp/
+*.log
