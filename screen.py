@@ -117,13 +117,9 @@ class SnippingOverlay(QWidget):
 
     def pil2pixmap(self, im):
         if im.mode == "RGB":
-            r, g, b = im.split()
-            im = Image.merge("RGB", (b, g, r))
             data = im.tobytes("raw", "RGB")
             qim = QImage(data, im.size[0], im.size[1], QImage.Format_RGB888)
         elif im.mode == "RGBA":
-            r, g, b, a = im.split()
-            im = Image.merge("RGBA", (b, g, r, a))
             data = im.tobytes("raw", "RGBA")
             qim = QImage(data, im.size[0], im.size[1], QImage.Format_RGBA888)
         else:
