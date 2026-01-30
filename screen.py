@@ -49,7 +49,7 @@ class SnippingTool:
         self.start_x = self.start_y = 0
         self.tray_icon = None
         self.listener = None
-        self.mocr = ocr.MangaOcr()
+        self.mocr = ocr.MangaOcr(force_cpu=True)
         self.ocr_timer = None
         self.ocr_text_id = None
         self.ocr_bg_id = None

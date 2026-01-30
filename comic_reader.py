@@ -40,7 +40,7 @@ class ComicReader(QMainWindow):
         self.filename_label = QLabel(self)
         self.filename_label.setFixedWidth(300)
         self.filename_label.setWordWrap(True)
-        self.filename_label.setStyleSheet("QLabel { background-color: rgba(0, 0, 0, 160); color: white; padding: 8px; border-radius: 4px; font-size: 14px; }")
+        self.filename_label.setStyleSheet("QLabel { background-color: rgba(0, 0, 0, 160); color: white; padding: 4px; border-radius: 4px; font-size: 14px; }")
         self.filename_label.move(10, 10)
         self.filename_label.hide()
 
@@ -213,7 +213,7 @@ class ComicReader(QMainWindow):
 
         try:
             self.current_zip = zipfile.ZipFile(file_path, 'r')
-            image_files = [f for f in self.current_zip.namelist() if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif'))]
+            image_files = [f for f in self.current_zip.namelist() if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif',".webp"))]
             
             try:
                 image_files = ns.natsorted(image_files, alg=ns.IGNORECASE|ns.PATH)
