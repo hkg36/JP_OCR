@@ -1,5 +1,38 @@
+import sys
+import os
+import ctypes
+import traceback
+import datetime
+import io
+from concurrent.futures import ThreadPoolExecutor
+
+# Win32 dependencies for mutex/single instance check
 import win32api, winerror, win32event
+
+# PySide6 imports
+from PySide6.QtWidgets import (QApplication, QWidget, QSystemTrayIcon, QMenu, 
+                               QToolTip)
+from PySide6.QtCore import (Qt, QTimer, Signal, QObject, QPoint, QRect, 
+                            QSize, Slot)
+from PySide6.QtGui import (QPainter, QPixmap, QColor, QPen, QFont, QAction, 
+                           QIcon, QImage, QCursor, QGuiApplication, QClipboard)
+
+from PIL import ImageGrab, Image
+from pynput import keyboard
+import pygame
+import ocr
+import gTTSfun
+import config
+
+# Fix pythonw output issues
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w')
+
+fontname = "微软雅黑"
 Single_mutex = None
+
 def check_single_instance():
     """Check if another instance is running and prevent multiple instances."""
     global Single_mutex
@@ -12,318 +45,380 @@ def check_single_instance():
         print("检查单实例失败:", ae)
         return False
     return True
-if __name__ == "__main__":
-    if not check_single_instance():
-        print("另一个实例已在运行。")
-        sys.exit(1)
-import ctypes
-import sys
-import os
 
-# 修复 pythonw 运行时 sys.stdout 为 None 导致 transformers 库 crash 的问题
-if sys.stdout is None:
-    sys.stdout = open(os.devnull, 'w')
-if sys.stderr is None:
-    sys.stderr = open(os.devnull, 'w')
+class Signaller(QObject):
+    """Signal bridge for non-GUI threads."""
+    start_snip_signal = Signal()
+    replay_sound_signal = Signal()
+    translation_done_signal = Signal(str)
 
-import tkinter as tk
-from PIL import ImageGrab, ImageTk, Image
-from pynput import keyboard
-import pystray
-import ocr
-import gTTSfun
-import pygame
-from concurrent.futures import ThreadPoolExecutor
-import config
-import traceback
-import datetime
-
-fontname="微软雅黑"
-class SnippingTool:
-    def __init__(self):
-        self.root = tk.Tk()
-        self.root.withdraw()
-
-        self.canvas = None
-        self.rect = None
-        self.start_x = self.start_y = 0
-        self.tray_icon = None
-        self.listener = None
-        self.mocr = ocr.MangaOcr(force_cpu=True)
-        self.ocr_timer = None
-        self.ocr_text_id = None
-        self.ocr_bg_id = None
-        self.ocr_bg_photo = None
-        self.translate_text_id = None
-        self.translate_bg_id = None
-        self.translate_bg_photo = None
-        self.fullscreen_img = None
-        self.last_result = ""
-        pygame.mixer.init()
-        self.last_sound = None
-        self.executor = ThreadPoolExecutor(max_workers=1)
-    def start_snip(self):
-        if self.fullscreen_img is not None:
-            # 已经在截图中就结束截图
-            self.on_cancel(None)
-            return  
-        if self.canvas:
-            self.canvas.destroy()
-        self.fullscreen_img = ImageGrab.grab()
-        # 全屏显示窗口
+class SnippingOverlay(QWidget):
+    def __init__(self, controller):
+        super().__init__()
+        self.controller = controller
         
-        #self.root.attributes('-fullscreen', True)
-        #self.root.attributes('-alpha', 0.3)  # 半透明
-        self.root.attributes('-topmost', True)
-        self.root.overrideredirect(True)  # 去掉标题栏
+        # Window setup
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setMouseTracking(True)
+        # self.setAttribute(Qt.WA_TranslucentBackground) # Not needed as we draw full screenshot
+        
+        self.original_image = None # PIL Image
+        self.original_pixmap = None # QPixmap
+        
+        self.start_pos = QPoint()
+        self.end_pos = QPoint()
+        self.is_selecting = False
+        self.rect_selection = QRect()
+        
+        self.ocr_result = ""
+        self.translate_result = ""
+        
+        # Debounce timer for OCR
+        self.ocr_timer = QTimer(self)
+        self.ocr_timer.setSingleShot(True)
+        self.ocr_timer.setInterval(500)
+        self.ocr_timer.timeout.connect(self.perform_ocr)
 
-        # 将全屏原图转为 tkinter 可用的 PhotoImage
-        self.photo = ImageTk.PhotoImage(self.fullscreen_img)
-        self.root.geometry(f"{self.photo.width()}x{self.photo.height()}+0+0")
+    def start_capture(self):
+        if self.isVisible():
+            self.close_overlay()
+            return
 
-        # 创建 canvas 并显示原图作为背景
-        self.canvas = tk.Canvas(self.root, width=self.photo.width(), height=self.photo.height(),
-                                highlightthickness=0, cursor="cross")
-        self.canvas.create_image(0, 0, anchor='nw', image=self.photo)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
-        self.root.deiconify()
-        # 绑定鼠标事件
-        self.canvas.bind("<ButtonPress-1>", self.on_button_press)
-        self.canvas.bind("<B1-Motion>", self.on_move_press)
-        self.canvas.bind("<ButtonRelease-1>", self.on_button_release)
-        self.canvas.bind("<Button-3>", self.on_cancel)
+        # Grab screenshot using PIL (consistent with original logic)
+        try:
+            self.original_image = ImageGrab.grab()
+        except OSError:
+            # Fallback if grab fails
+            self.close_overlay()
+            return
+            
+        # Get device pixel ratio for correct scaling
+        screen = QApplication.primaryScreen()
+        dpr = screen.devicePixelRatio()
 
-    def on_button_press(self, event):
-        self.start_x = event.x
-        self.start_y = event.y
-        self.rect = self.canvas.create_rectangle(self.start_x, self.start_y, self.start_x, self.start_y,
-                                                 outline='red', width=2, dash=(4, 4))
+        # Convert PIL to QPixmap
+        self.original_pixmap = self.pil2pixmap(self.original_image)
+        self.original_pixmap.setDevicePixelRatio(dpr)
+        
+        # Setup window geometry to cover the captured area (Logical pixels)
+        self.setGeometry(0, 0, int(self.original_image.width / dpr), int(self.original_image.height / dpr))
+        
+        # Reset state
+        self.start_pos = QPoint()
+        self.end_pos = QPoint()
+        self.is_selecting = False
+        self.ocr_result = ""
+        self.translate_result = ""
+        self.rect_selection = QRect()
+        
+        self.show()
+        self.setCursor(Qt.CrossCursor)
+        self.activateWindow()
 
-    def on_move_press(self, event):
-        cur_x, cur_y = event.x, event.y
-        self.canvas.coords(self.rect, self.start_x, self.start_y, cur_x, cur_y)
-        # 取消之前的定时器
-        if self.ocr_timer:
-            self.root.after_cancel(self.ocr_timer)
-        # 启动新的定时器，500ms 后执行 OCR
-        self.ocr_timer = self.root.after(500, self.perform_ocr)
+    def pil2pixmap(self, im):
+        if im.mode == "RGB":
+            r, g, b = im.split()
+            im = Image.merge("RGB", (b, g, r))
+            data = im.tobytes("raw", "RGB")
+            qim = QImage(data, im.size[0], im.size[1], QImage.Format_RGB888)
+        elif im.mode == "RGBA":
+            r, g, b, a = im.split()
+            im = Image.merge("RGBA", (b, g, r, a))
+            data = im.tobytes("raw", "RGBA")
+            qim = QImage(data, im.size[0], im.size[1], QImage.Format_RGBA888)
+        else:
+             # Fallback
+             buf = io.BytesIO()
+             im.save(buf, format="PNG")
+             qim = QImage.fromData(buf.getvalue())
+        
+        return QPixmap.fromImage(qim)
+
+    def paintEvent(self, event):
+        if not self.original_pixmap:
+            return
+            
+        painter = QPainter(self)
+        painter.drawPixmap(0, 0, self.original_pixmap)
+        
+        # Draw selection rectangle
+        if self.is_selecting or not self.rect_selection.isNull():
+            pen = QPen(Qt.red, 2, Qt.DashLine)
+            painter.setPen(pen)
+            painter.drawRect(self.rect_selection)
+            
+            # Draw Results
+            self.draw_overlays(painter)
+
+    def draw_overlays(self, painter):
+        if not self.rect_selection.isValid() or (self.rect_selection.width() < 10 and self.rect_selection.height() < 10):
+            return
+
+        font = QFont(fontname, 14)
+        painter.setFont(font)
+        
+        # Draw below the selection rectangle
+        x_base = self.rect_selection.left()
+        y_base = self.rect_selection.bottom() + 10
+        max_w = max(100, self.width() - x_base) 
+        
+        last_y = y_base
+        
+        # OCR Text
+        if self.ocr_result:
+            rect = painter.boundingRect(QRect(x_base, last_y, max_w, 0), Qt.TextWordWrap | Qt.AlignLeft, self.ocr_result)
+            painter.fillRect(rect, QColor(0, 0, 0, 150))
+            painter.setPen(Qt.white)
+            painter.drawText(rect, Qt.TextWordWrap | Qt.AlignLeft, self.ocr_result)
+            last_y = rect.bottom() + 3
+            
+        # Translation Text
+        if self.translate_result:
+            rect = painter.boundingRect(QRect(x_base, last_y, max_w, 0), Qt.TextWordWrap | Qt.AlignLeft, self.translate_result)
+            painter.fillRect(rect, QColor(0, 0, 0, 150))
+            painter.setPen(Qt.white)
+            painter.drawText(rect, Qt.TextWordWrap | Qt.AlignLeft, self.translate_result)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.start_pos = event.pos()
+            self.end_pos = event.pos()
+            self.is_selecting = True
+            self.rect_selection = QRect(self.start_pos, self.end_pos)
+            
+            # Clear previous results
+            self.ocr_result = ""
+            self.translate_result = ""
+            if self.ocr_timer.isActive():
+                self.ocr_timer.stop()
+            self.update()
+        elif event.button() == Qt.RightButton:
+            self.close_overlay()
+
+    def mouseMoveEvent(self, event):
+        if self.is_selecting:
+            self.end_pos = event.pos()
+            self.rect_selection = QRect(self.start_pos, self.end_pos).normalized()
+            self.update()
+            
+            # Restart timer for debounce
+            self.ocr_timer.start()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.is_selecting = False
+            self.end_pos = event.pos()
+            self.rect_selection = QRect(self.start_pos, self.end_pos).normalized()
+            
+            # If timer is running, stop it and run OCR immediately
+            if self.ocr_timer.isActive():
+                self.ocr_timer.stop()
+                self.perform_ocr()
+            elif not self.ocr_result:
+                # If no result yet, run it
+                self.perform_ocr()
+                
+            # As per original behavior: close on release, play sound
+            self.close_overlay()
+            if self.ocr_result:
+                 self.controller.play_sound(self.ocr_result)
 
     def perform_ocr(self):
-        # 获取当前矩形坐标
-        coords = self.canvas.coords(self.rect)
-        x1, y1, x2, y2 = coords
-        #区域不可太小
-        if abs(x2 - x1) < 10 or abs(y2 - y1) < 10:
+        if self.rect_selection.width() < 10 or self.rect_selection.height() < 10:
             return
-        # 裁剪截图
-        screenshot = self.fullscreen_img.crop((x1, y1, x2, y2))
-        # 执行 OCR
-        result = self.mocr(screenshot)
-        self.last_result = result
-        # 删除之前的文本和背景
-        if self.ocr_text_id:
-            self.canvas.delete(self.ocr_text_id)
-        if self.ocr_bg_id:
-            self.canvas.delete(self.ocr_bg_id)
-        # 显示文本在矩形下方靠左
-        text_x = x1
-        text_y = y2 + 10
-        # 计算最大宽度以避免文本超出屏幕右侧
-        max_width = self.photo.width() - text_x
-        # 临时创建文本获取 bbox
-        temp_id = self.canvas.create_text(text_x, text_y, text=result, anchor='nw', fill='red', font=(fontname, 14), width=max_width)
-        bbox = self.canvas.bbox(temp_id)
-        self.canvas.delete(temp_id)
-        width = bbox[2] - bbox[0]
-        height = bbox[3] - bbox[1]
-        # 创建半透明灰色背景
-        bg_image = Image.new('RGBA', (width, height), (0, 0, 0, 255))
-        self.ocr_bg_photo = ImageTk.PhotoImage(bg_image)
-        self.ocr_bg_id = self.canvas.create_image(text_x, text_y, anchor='nw', image=self.ocr_bg_photo)
-        # 创建文本
-        self.ocr_text_id = self.canvas.create_text(text_x, text_y, text=result, anchor='nw', fill='white', font=(fontname, 14), width=max_width)
-        # 放到剪贴板
-        self.root.clipboard_clear()
-        self.root.clipboard_append(result)
-        self.start_translate(result)
-        print("OCR 结果：", result)
-    def start_translate(self, text):
-        res=self.executor.submit(self.go_translate, text)
-        res.add_done_callback(self._on_translate_done)
-    def _on_translate_done(self, future):
+            
+        # Scale to physical pixels for cropping
+        dpr = self.devicePixelRatio()
+        rect = self.rect_selection
+        
+        x = int(rect.x() * dpr)
+        y = int(rect.y() * dpr)
+        w = int(rect.width() * dpr)
+        h = int(rect.height() * dpr)
+        
         try:
-            translated_text = future.result()
-            self.root.after(0, self.on_translate_done, translated_text)
+            crop = self.original_image.crop((x, y, x + w, y + h))
+            
+            # Run OCR (blocking main thread briefly)
+            result = self.controller.mocr(crop)
+            self.ocr_result = result
+            print("OCR Result:", result)
+            
+            # Copy to clipboard
+            QApplication.clipboard().setText(result)
+            
+            self.update()
+            
+            # Start translation
+            self.controller.start_translate(result)
+            
         except Exception as e:
-            print("翻译失败:", e)
-    def on_translate_done(self,text):
-        if self.fullscreen_img is None:
-            return
-        #取得ocr_text_id的位置，翻译结果显示在其下方左对齐
-        ocr_text_id_bbox = self.canvas.bbox(self.ocr_text_id)
-        text_x = ocr_text_id_bbox[0]
-        text_y = ocr_text_id_bbox[3] + 3
-        # 计算最大宽度以避免文本超出屏幕右侧
-        max_width = self.photo.width() - text_x
-        #删除之前的翻译文本和背景
-        if self.translate_text_id:
-            self.canvas.delete(self.translate_text_id)
-        if self.translate_bg_id:
-            self.canvas.delete(self.translate_bg_id)
-        #创建临时文本获取 bbox
-        temp_id = self.canvas.create_text(text_x, text_y, text=text, anchor='nw', fill='red', font=(fontname, 14), width=max_width)
-        bbox = self.canvas.bbox(temp_id)
-        self.canvas.delete(temp_id)
-        width = bbox[2] - bbox[0]
-        height = bbox[3] - bbox[1]
-        #创建半透明灰色背景
-        bg_image = Image.new('RGBA', (width, height), (0, 0, 0, 255))
-        self.translate_bg_photo = ImageTk.PhotoImage(bg_image)
-        self.translate_bg_id = self.canvas.create_image(text_x, text_y, anchor='nw', image=self.translate_bg_photo)
-        #创建翻译文本
-        self.translate_text_id = self.canvas.create_text(text_x, text_y, text=text, anchor='nw', fill='white', font=(fontname, 14), width=max_width)
-        print("翻译结果：", text)
+            print("OCR Error:", e)
+
+    def set_translation(self, text):
+        self.translate_result = text
+        self.update()
+
+    def close_overlay(self):
+        self.hide()
+        # Clear large images to free memory
+        self.original_image = None
+        self.original_pixmap = None
+
+class SnippingTool(QObject):
+    def __init__(self):
+        super().__init__()
+        
+        # Initialize Logic
+        self.mocr = ocr.MangaOcr(force_cpu=True)
+        pygame.mixer.init()
+        self.executor = ThreadPoolExecutor(max_workers=1)
+        
+        # Signal bridge
+        self.signaller = Signaller()
+        self.signaller.start_snip_signal.connect(self.start_snip)
+        self.signaller.replay_sound_signal.connect(self.replay_sound)
+        self.signaller.translation_done_signal.connect(self.on_translate_done)
+        
+        # UI Overlay
+        self.overlay = SnippingOverlay(self)
+        
+        # System Tray Icon
+        self.tray_icon = QSystemTrayIcon(self)
+        if os.path.exists("data/tray.png"):
+             self.tray_icon.setIcon(QIcon("data/tray.png"))
+        else:
+             # Fallback icon if file missing
+             pix = QPixmap(16, 16)
+             pix.fill(Qt.blue)
+             self.tray_icon.setIcon(QIcon(pix))
+        
+        tray_menu = QMenu()
+        action_snip = QAction("截图", self)
+        action_snip.triggered.connect(self.start_snip)
+        tray_menu.addAction(action_snip)
+        
+        action_exit = QAction("退出", self)
+        action_exit.triggered.connect(self.exit_app)
+        tray_menu.addAction(action_exit)
+        
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.show()
+        # Tray left click to capture
+        self.tray_icon.activated.connect(self.on_tray_activated)
+
+        # Keyboard Listener
+        self.listener = None
+        self.alt_pressed = False
+        self.start_listener()
+
+    def on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.Trigger:
+            self.start_snip()
+
+    @Slot()
+    def start_snip(self):
+        self.overlay.start_capture()
+        
+    def start_translate(self, text):
+        self.executor.submit(self.go_translate, text)
+        
     def go_translate(self, text):
         try:
-            translated_text = gTTSfun.translate_with_api_key(text=text, target="zh-CN", api_key=config.gcloud_api_key)
-            return translated_text
+            # Running in thread
+            translated = gTTSfun.translate_with_api_key(text=text, target="zh-CN", api_key=config.gcloud_api_key)
+            self.signaller.translation_done_signal.emit(translated)
         except Exception as e:
-            print("翻译失败:", e)
-            return f"翻译失败: {str(e)}"
-    def on_button_release(self, event):
-        self.cleanup_controls()
-        if self.last_result == "":
-            self.perform_ocr()
-        self.root.withdraw()
-        if self.last_result != "":
-            self.executor.submit(self.goPlaySound, self.last_result)
-        self.last_result = ""
-        self.fullscreen_img = None
+            print("Translation failed:", e)
+            self.signaller.translation_done_signal.emit(f"翻译失败: {str(e)}")
+
+    @Slot(str)
+    def on_translate_done(self, text):
+        print("翻译结果：", text)
+        if self.overlay.isVisible():
+            self.overlay.set_translation(text)
+
+    def play_sound(self, text):
+        self.executor.submit(self.goPlaySound, text)
+        
     def goPlaySound(self, sound_text):
         try:
             fp = gTTSfun.japanese_tts(text=sound_text)
             sound = fp
             sound.seek(0)
-
             pygame.mixer.music.load(sound)
             pygame.mixer.music.play()
         except Exception as e:
             print("语音播放失败:", e)
+
+    @Slot()
     def replay_sound(self):
         try:
             pygame.mixer.music.rewind()
             pygame.mixer.music.play()
         except Exception as e:
             print("语音播放失败:", e)
-    def on_replay(self, event):
-        self.executor.submit(self.replay_sound)
-    def on_cancel(self, event):
-        self.cleanup_controls()
-        self.last_result = ""
-        self.root.withdraw()
-        self.fullscreen_img = None
-    def cleanup_controls(self):
-        # 取消定时器
-        if self.ocr_timer:
-            self.root.after_cancel(self.ocr_timer)
-            self.ocr_timer = None
-        # 删除文本和背景
-        if self.ocr_text_id:
-            self.canvas.delete(self.ocr_text_id)
-            self.ocr_text_id = None
-        if self.translate_text_id:
-            self.canvas.delete(self.translate_text_id)
-            self.translate_text_id = None
-        if self.ocr_bg_id:
-            self.canvas.delete(self.ocr_bg_id)
-            self.ocr_bg_id = None
-            self.ocr_bg_photo = None
-        if self.translate_bg_id:
-            self.canvas.delete(self.translate_bg_id)
-            self.translate_bg_id = None
-            self.translate_bg_photo = None
-    def create_tray_icon(self):
-        """Create system tray icon."""
-        image = Image.open("data/tray.png")
-        menu = pystray.Menu(
-            pystray.MenuItem("截图", self.on_tray_activate),
-            pystray.MenuItem("退出", self.on_tray_exit)
-        )
-        self.tray_icon = pystray.Icon("SnippingTool", image, "截图工具", menu)
-        self.tray_icon.run_detached()
 
-    def on_tray_activate(self):
-        """Tray menu item to start snipping."""
-        self.start_snip()
+    def start_listener(self):
+        def on_press(key):
+            try:
+                if key == keyboard.Key.alt or key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
+                    self.alt_pressed = True
+                    return
+                elif self.alt_pressed:
+                    if hasattr(key, 'char'):
+                        if key.char == 'q':
+                            print("Alt + q 触发！")
+                            self.signaller.start_snip_signal.emit()
+                        elif key.char == 'w':
+                            print("Alt + w 触发！")
+                            self.signaller.replay_sound_signal.emit()
+                    self.alt_pressed = False
+            except AttributeError:
+                pass
 
-    def on_tray_exit(self):
-        """Tray menu item to exit the application."""
-        if self.tray_icon:
-            self.tray_icon.stop()
+        def on_release(key):
+            if key == keyboard.Key.alt or key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
+                self.alt_pressed = False
+
+        self.listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+        self.listener.start()
+
+    def exit_app(self):
         if self.listener:
             self.listener.stop()
-        self.executor.shutdown(wait=True)
-        self.root.after(0, self.root.quit)
+        self.executor.shutdown(wait=False)
+        QApplication.quit()
+
 def enable_dpi_awareness():
-    """Ensure Windows reports real pixel sizes; otherwise Tk coords and PIL screenshot diverge."""
+    """Ensure Windows reports real pixel sizes; otherwise Qt and PIL coords diverge."""
     if not sys.platform.startswith("win"):
         return
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-monitor DPI aware
     except Exception:
         try:
-            ctypes.windll.user32.SetProcessDPIAware()  # Fallback for older Windows
+            ctypes.windll.user32.SetProcessDPIAware()  # Fallback
         except Exception:
             pass
-try:
+
+if __name__ == "__main__":
+    if not check_single_instance():
+        print("另一个实例已在运行。")
+        sys.exit(1)
+
     enable_dpi_awareness()
-    tool = SnippingTool()
-    tool.create_tray_icon()
-    def on_activate():
-        tool.start_snip()
     
-    def on_exit():
-        tool.on_tray_exit()
-    def on_replay():
-        tool.on_replay(None)
-    
-    """listener = keyboard.GlobalHotKeys({
-        '<alt>+q': on_activate,
-        '<alt>+w': on_replay,
-    })
-    tool.listener = listener"""
-    def on_press(key):
-        global alt_pressed
-        try:
-            if key == keyboard.Key.alt or key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
-                alt_pressed = True
-                return  # 不 suppress，继续正常行为
-            elif alt_pressed:
-                if key.char == 'q':
-                    print("Alt + q 触发！")
-                    on_activate()
-                elif key.char == 'w':
-                    print("Alt + w 触发！")
-                    on_replay()
-                alt_pressed = False  # 重置（简化，按需调整）
-        except AttributeError:
-            pass
-        return True  # 允许事件通过
-    alt_pressed = False
-    def on_release(key):
-        global alt_pressed
-        if key == keyboard.Key.alt or key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
-            alt_pressed = False
-    listener=keyboard.Listener(on_press=on_press, on_release=on_release, suppress=False)
-    listener.start()
-    
-    tool.root.mainloop()
-except Exception as e:
-    print("\n" + "="*60)
-    print("发生未捕获异常！")
-    print(traceback.format_exc())
-    print("="*60)
-    # 可以选择把错误写文件
-    with open("error.log", "a", encoding="utf-8") as f:
-        f.write(f"\n{datetime.datetime.now()}\n{traceback.format_exc()}\n")
-    raise  # 或者 input("按回车退出...") 看一眼
+    app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False) # Important for tray-only apps
+
+    try:
+        tool = SnippingTool()
+        sys.exit(app.exec())
+    except Exception as e:
+        print("\n" + "="*60)
+        print("发生未捕获异常！")
+        print(traceback.format_exc())
+        print("="*60)
+        with open("error.log", "a", encoding="utf-8") as f:
+            f.write(f"\n{datetime.datetime.now()}\n{traceback.format_exc()}\n")
