@@ -2,6 +2,7 @@
 __pycache__/
 try*.py
 conf.ini
+conf.yaml
 *.lnk
 tmp/
 *.log

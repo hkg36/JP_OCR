@@ -1,6 +1,10 @@
 import ocr
 import json
 from pathlib import Path
+import config
+import huggingface_hub
+
+huggingface_hub.login(config.huggingface_token)
 
 TEST_DATA_ROOT = Path(__file__).parent / "test_data"
 

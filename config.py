@@ -1,4 +1,5 @@
-import configparser
-config = configparser.ConfigParser()
-config.read("conf.ini", encoding="utf-8")
-gcloud_api_key = config.get("key", "gcloud")
+import yaml
+with open("conf.yaml", "r", encoding="utf-8") as f:
+    config = yaml.safe_load(f)
+gcloud_api_key = config["key"]["gcloud"]
+huggingface_token = config["key"]["hf_token"]
