@@ -59,6 +59,7 @@ class SnippingOverlay(QWidget):
         
         # Window setup
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_OpaquePaintEvent) # 防止窗口显示时先绘制白色背景
         self.setMouseTracking(True)
         # self.setAttribute(Qt.WA_TranslucentBackground) # Not needed as we draw full screenshot
         
