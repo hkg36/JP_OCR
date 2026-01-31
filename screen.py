@@ -1,6 +1,7 @@
 # Win32 dependencies for mutex/single instance check
 import win32api, winerror, win32event
 import sys
+Single_mutex = None
 def check_single_instance():
     """Check if another instance is running and prevent multiple instances."""
     global Single_mutex
@@ -46,7 +47,6 @@ if sys.stderr is None:
     sys.stderr = open(os.devnull, 'w')
 
 fontname = "微软雅黑"
-Single_mutex = None
 
 class Signaller(QObject):
     """Signal bridge for non-GUI threads."""
