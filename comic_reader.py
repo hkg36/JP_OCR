@@ -24,6 +24,7 @@ class ComicReader(QMainWindow):
         self.zip_file_list = []
         self.current_zip_index = -1
         self.current_zip = None
+        self.current_folder = None
         
         self.last_wheel_time = 0  # 上次滚轮翻页的时间
         self.scroll_start_time = 0  # 连续滚动开始时间
@@ -138,11 +139,24 @@ class ComicReader(QMainWindow):
             
             # 计算新的索引
             if not self.zip_file_list:
-                # 列表空了
-                self.current_zip_index = -1
-                self.image_label.setText("没有文件了")
-                self.filename_label.hide()
-                self.progress_bar.hide()
+                # 列表空了，尝试刷新文件夹
+                found_new = False
+                if self.current_folder and os.path.exists(self.current_folder):
+                    try:
+                        files = [os.path.join(self.current_folder, f) for f in os.listdir(self.current_folder) if f.lower().endswith('.zip')]
+                        if files:
+                            self.zip_file_list = ns.natsorted(files, alg=ns.IGNORECASE|ns.PATH)
+                            self.current_zip_index = 0
+                            self.load_zip(self.zip_file_list[0])
+                            found_new = True
+                    except Exception as e:
+                        print(f"刷新文件夹失败: {e}")
+
+                if not found_new:
+                    self.current_zip_index = -1
+                    self.image_label.setText("没有文件了")
+                    self.filename_label.hide()
+                    self.progress_bar.hide()
             else:
                 # 如果删除的是最后一个，索引前移，否则索引不变（即指向原来的下一个）
                 if self.current_zip_index >= len(self.zip_file_list):
@@ -163,6 +177,7 @@ class ComicReader(QMainWindow):
             # 获取同目录下的所有 ZIP 文件
             try:
                 folder = os.path.dirname(file_path)
+                self.current_folder = folder # 记录当前文件夹
                 files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith('.zip')]
                 # 排序
                 self.zip_file_list = ns.natsorted(files, alg=ns.IGNORECASE|ns.PATH)
