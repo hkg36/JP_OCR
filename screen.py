@@ -1,5 +1,6 @@
 # Win32 dependencies for mutex/single instance check
 import win32api, winerror, win32event
+import sys
 def check_single_instance():
     """Check if another instance is running and prevent multiple instances."""
     global Single_mutex
@@ -16,7 +17,6 @@ if __name__ == "__main__":
     if not check_single_instance():
         print("另一个实例已在运行。")
         sys.exit(1)
-import sys
 import os
 import ctypes
 import traceback
