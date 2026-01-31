@@ -1,22 +1,6 @@
-# Win32 dependencies for mutex/single instance check
-import win32api, winerror, win32event
+import checkSingle
+checkSingle.check_single_instance()
 import sys
-def check_single_instance():
-    """Check if another instance is running and prevent multiple instances."""
-    global Single_mutex
-    MUTEX_NAME = "Global\\SnippingTool_SingleInstance_v1.0" 
-    try:
-        Single_mutex = win32event.CreateMutex(None, False, MUTEX_NAME)
-        if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
-            return False
-    except Exception as ae:
-        print("检查单实例失败:", ae)
-        return False
-    return True
-if __name__ == "__main__":
-    if not check_single_instance():
-        print("另一个实例已在运行。")
-        sys.exit(1)
 import os
 import ctypes
 import traceback
