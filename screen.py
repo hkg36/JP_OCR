@@ -29,6 +29,16 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, 'w')
 
+# Ensure stdout/stderr encoding is utf-8 to prevent GBK errors
+if sys.platform.startswith('win'):
+    try:
+        if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8')
+        if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 fontname = "微软雅黑"
 
 class Signaller(QObject):
@@ -235,7 +245,9 @@ class SnippingOverlay(QWidget):
             self.controller.start_translate(result)
             
         except Exception as e:
-            print("OCR Error:", e)
+            traceback.print_exc()
+            self.ocr_result = f"OCR Error: {e}"
+            self.update()
 
     def set_translation(self, text):
         self.translate_result = text
