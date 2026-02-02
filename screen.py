@@ -7,6 +7,7 @@ import traceback
 import datetime
 import io
 from concurrent.futures import ThreadPoolExecutor
+from loguru import logger
 
 # PySide6 imports
 from PySide6.QtWidgets import (QApplication, QWidget, QSystemTrayIcon, QMenu, 
@@ -173,8 +174,8 @@ class SnippingOverlay(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.start_pos = event.pos()
-            self.end_pos = event.pos()
+            self.start_pos = event.position().toPoint()
+            self.end_pos = event.position().toPoint()
             self.is_selecting = True
             self.rect_selection = QRect(self.start_pos, self.end_pos)
             
@@ -189,7 +190,7 @@ class SnippingOverlay(QWidget):
 
     def mouseMoveEvent(self, event):
         if self.is_selecting:
-            self.end_pos = event.pos()
+            self.end_pos = event.position().toPoint()
             self.rect_selection = QRect(self.start_pos, self.end_pos).normalized()
             self.update()
             
@@ -199,7 +200,7 @@ class SnippingOverlay(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.is_selecting = False
-            self.end_pos = event.pos()
+            self.end_pos = event.position().toPoint()
             self.rect_selection = QRect(self.start_pos, self.end_pos).normalized()
             
             # If timer is running, stop it and run OCR immediately
@@ -234,7 +235,7 @@ class SnippingOverlay(QWidget):
             # Run OCR (blocking main thread briefly)
             result = self.controller.mocr(crop)
             self.ocr_result = result
-            print("OCR Result:", result)
+            #logger.info(f"OCR Result: {result}")
             
             # Copy to clipboard
             QApplication.clipboard().setText(result)
@@ -245,7 +246,6 @@ class SnippingOverlay(QWidget):
             self.controller.start_translate(result)
             
         except Exception as e:
-            traceback.print_exc()
             self.ocr_result = f"OCR Error: {e}"
             self.update()
 
@@ -323,12 +323,12 @@ class SnippingTool(QObject):
             translated = gTTSfun.translate_with_api_key(text=text, target="zh-CN", api_key=config.gcloud_api_key)
             self.signaller.translation_done_signal.emit(translated)
         except Exception as e:
-            print("Translation failed:", e)
+            logger.error(f"Translation failed: {e}")
             self.signaller.translation_done_signal.emit(f"翻译失败: {str(e)}")
 
     @Slot(str)
     def on_translate_done(self, text):
-        print("翻译结果：", text)
+        logger.info(f"翻译结果：{text}")
         if self.overlay.isVisible():
             self.overlay.set_translation(text)
 
@@ -343,7 +343,7 @@ class SnippingTool(QObject):
             pygame.mixer.music.load(sound)
             pygame.mixer.music.play()
         except Exception as e:
-            print("语音播放失败:", e)
+            logger.error(f"语音播放失败: {e}")
 
     @Slot()
     def replay_sound(self):
@@ -351,7 +351,7 @@ class SnippingTool(QObject):
             pygame.mixer.music.rewind()
             pygame.mixer.music.play()
         except Exception as e:
-            print("语音播放失败:", e)
+            logger.error(f"语音播放失败: {e}")
 
     def start_listener(self):
         def on_press(key):
@@ -362,10 +362,10 @@ class SnippingTool(QObject):
                 elif self.alt_pressed:
                     if hasattr(key, 'char'):
                         if key.char == 'q':
-                            print("Alt + q 触发！")
+                            logger.info("Alt + q 触发！")
                             self.signaller.start_snip_signal.emit()
                         elif key.char == 'w':
-                            print("Alt + w 触发！")
+                            logger.info("Alt + w 触发！")
                             self.signaller.replay_sound_signal.emit()
                     self.alt_pressed = False
             except AttributeError:
@@ -406,9 +406,6 @@ if __name__ == "__main__":
         tool = SnippingTool()
         sys.exit(app.exec())
     except Exception as e:
-        print("\n" + "="*60)
-        print("发生未捕获异常！")
-        print(traceback.format_exc())
-        print("="*60)
+        logger.error("发生未捕获异常！", exc_info=True)
         with open("error.log", "a", encoding="utf-8") as f:
             f.write(f"\n{datetime.datetime.now()}\n{traceback.format_exc()}\n")
