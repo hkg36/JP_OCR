@@ -6,12 +6,14 @@ import ctypes
 import traceback
 import datetime
 import io
+import yaml
 from concurrent.futures import ThreadPoolExecutor
 from loguru import logger
 
 # PySide6 imports
 from PySide6.QtWidgets import (QApplication, QWidget, QSystemTrayIcon, QMenu, 
-                               QToolTip)
+                               QToolTip, QDialog, QVBoxLayout, QFormLayout, 
+                               QLineEdit, QPushButton, QHBoxLayout, QMessageBox)
 from PySide6.QtCore import (Qt, QTimer, Signal, QObject, QPoint, QRect, 
                             QSize, Slot)
 from PySide6.QtGui import (QPainter, QPixmap, QColor, QPen, QFont, QAction, 
@@ -22,7 +24,22 @@ from pynput import keyboard
 import pygame
 import ocr
 import gTTSfun
-import config
+
+# Global config storage
+GLOBAL_CONFIG = {}
+
+def load_global_config():
+    global GLOBAL_CONFIG
+    try:
+        if os.path.exists("conf.yaml"):
+            with open("conf.yaml", "r", encoding="utf-8") as f:
+                GLOBAL_CONFIG = yaml.safe_load(f) or {}
+    except Exception as e:
+        logger.error(f"Failed to load config: {e}")
+        GLOBAL_CONFIG = {}
+
+# Load config immediately
+load_global_config()
 
 # Fix pythonw output issues
 if sys.stdout is None:
@@ -47,6 +64,72 @@ class Signaller(QObject):
     start_snip_signal = Signal()
     replay_sound_signal = Signal()
     translation_done_signal = Signal(str)
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("设置")
+        self.resize(400, 150)
+        self.setup_ui()
+        self.load_settings()
+
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        form_layout = QFormLayout()
+
+        self.gcloud_key_edit = QLineEdit()
+        self.hf_token_edit = QLineEdit()
+
+        form_layout.addRow("Google Cloud Key:", self.gcloud_key_edit)
+        form_layout.addRow("HuggingFace Token:", self.hf_token_edit)
+
+        layout.addLayout(form_layout)
+
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("保存")
+        save_btn.clicked.connect(self.save_settings)
+        cancel_btn = QPushButton("取消")
+        cancel_btn.clicked.connect(self.reject)
+        
+        btn_layout.addStretch()
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+
+        layout.addLayout(btn_layout)
+
+    def load_settings(self):
+        keys = GLOBAL_CONFIG.get('key', {})
+        self.gcloud_key_edit.setText(str(keys.get('gcloud', '')))
+        self.hf_token_edit.setText(str(keys.get('hf_token', '')))
+
+    def save_settings(self):
+        new_gcloud = self.gcloud_key_edit.text().strip()
+        new_hf = self.hf_token_edit.text().strip()
+        
+        try:
+            with open("conf.yaml", "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            
+            if 'key' not in data:
+                data['key'] = {}
+            
+            data['key']['gcloud'] = new_gcloud
+            data['key']['hf_token'] = new_hf
+            
+            with open("conf.yaml", "w", encoding="utf-8") as f:
+                yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+                
+            # Update runtime config
+            global GLOBAL_CONFIG
+            if 'key' not in GLOBAL_CONFIG:
+                GLOBAL_CONFIG['key'] = {}
+            GLOBAL_CONFIG['key']['gcloud'] = new_gcloud
+            GLOBAL_CONFIG['key']['hf_token'] = new_hf
+
+            QMessageBox.information(self, "成功", "设置已保存")
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"保存失败: {str(e)}")
 
 class SnippingOverlay(QWidget):
     def __init__(self, controller):
@@ -292,6 +375,10 @@ class SnippingTool(QObject):
         action_snip.triggered.connect(self.start_snip)
         tray_menu.addAction(action_snip)
         
+        action_settings = QAction("设置", self)
+        action_settings.triggered.connect(self.open_settings)
+        tray_menu.addAction(action_settings)
+        
         action_exit = QAction("退出", self)
         action_exit.triggered.connect(self.exit_app)
         tray_menu.addAction(action_exit)
@@ -305,6 +392,10 @@ class SnippingTool(QObject):
         self.listener = None
         self.alt_pressed = False
         self.start_listener()
+
+    def open_settings(self):
+        dlg = SettingsDialog()
+        dlg.exec()
 
     def on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.Trigger:
@@ -320,7 +411,8 @@ class SnippingTool(QObject):
     def go_translate(self, text):
         try:
             # Running in thread
-            translated = gTTSfun.translate_with_api_key(text=text, target="zh-CN", api_key=config.gcloud_api_key)
+            api_key = GLOBAL_CONFIG.get("key", {}).get("gcloud", "")
+            translated = gTTSfun.translate_with_api_key(text=text, target="zh-CN", api_key=api_key)
             self.signaller.translation_done_signal.emit(translated)
         except Exception as e:
             logger.error(f"Translation failed: {e}")

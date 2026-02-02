@@ -1,10 +1,13 @@
 import ocr
 import json
 from pathlib import Path
-import config
 import huggingface_hub
+import yaml
 
-huggingface_hub.login(config.huggingface_token)
+with open("conf.yaml", "r", encoding="utf-8") as f:
+    conf = yaml.safe_load(f)
+
+huggingface_hub.login(conf["key"]["hf_token"])
 
 TEST_DATA_ROOT = Path(__file__).parent / "test_data"
 

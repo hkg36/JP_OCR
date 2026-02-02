@@ -85,10 +85,14 @@ def translate_with_api_key(text="Hello, world!", target="zh-CN", api_key="YOUR_A
     return translated_text
 if __name__ == "__main__":
     import pygame
-    import config
+    import yaml
+    with open("conf.yaml", "r", encoding="utf-8") as f:
+         config = yaml.safe_load(f)
+    gcloud_api_key = config["key"]["gcloud"]
+
     # 示例使用
     srctext="こんにちは、世界。今日はいい天気です。"
-    translated_text = translate_with_api_key(text=srctext, target="zh-CN", api_key=config.gcloud_api_key)
+    translated_text = translate_with_api_key(text=srctext, target="zh-CN", api_key=gcloud_api_key)
     print(f"翻译结果: {translated_text}")
     audio = japanese_tts(srctext)
     # with open("output.mp3", "wb") as f:
