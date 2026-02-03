@@ -329,7 +329,7 @@ class SnippingOverlay(QWidget):
             self.close_overlay()
             if self.ocr_result:
                  self.controller.play_sound(self.ocr_result)
-
+    @Slot()
     def perform_ocr(self):
         if self.rect_selection.width() < 10 or self.rect_selection.height() < 10:
             return
