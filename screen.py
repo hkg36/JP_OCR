@@ -7,8 +7,12 @@ import traceback
 import datetime
 import io
 import yaml
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from loguru import logger
+
+log_history = deque(maxlen=500)
+logger.add(log_history.append, format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}\n")
 
 # PySide6 imports
 from PySide6.QtWidgets import (QApplication, QWidget, QSystemTrayIcon, QMenu, 
@@ -532,3 +536,6 @@ if __name__ == "__main__":
         logger.error("发生未捕获异常！", exc_info=True)
         with open("error.log", "a", encoding="utf-8") as f:
             f.write(f"\n{datetime.datetime.now()}\n{traceback.format_exc()}\n")
+            f.write("--- 最近500行日志 ---\n")
+            f.writelines(log_history)
+            f.write("\n" + "="*50 + "\n")
