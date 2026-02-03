@@ -23,7 +23,8 @@ class RecentCache:
         if len(self.cache) > self.capacity:
             self.cache.popitem(last=False)  # 移除最旧的（最前面）
 
-proxy = "http://127.0.0.1:10808"
+def get_proxy():
+    return "http://127.0.0.1:10808"
 session = None
 keepbuffer=3
 recent_buffer_tts = RecentCache(capacity=keepbuffer)
@@ -31,7 +32,7 @@ recent_buffer_translate = RecentCache(capacity=keepbuffer)
 def get_session():
     global session
     if session is None:
-        session = httpx.Client(timeout=10.0,http2=True,proxy=proxy)
+        session = httpx.Client(timeout=10.0,http2=True,proxy=get_proxy())
     return session
 def japanese_tts(text: str) -> BytesIO:
     """

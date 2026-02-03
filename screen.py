@@ -13,7 +13,8 @@ from loguru import logger
 # PySide6 imports
 from PySide6.QtWidgets import (QApplication, QWidget, QSystemTrayIcon, QMenu, 
                                QToolTip, QDialog, QVBoxLayout, QFormLayout, 
-                               QLineEdit, QPushButton, QHBoxLayout, QMessageBox)
+                               QLineEdit, QPushButton, QHBoxLayout, QMessageBox,
+                               QCheckBox)
 from PySide6.QtCore import (Qt, QTimer, Signal, QObject, QPoint, QRect, 
                             QSize, Slot)
 from PySide6.QtGui import (QPainter, QPixmap, QColor, QPen, QFont, QAction, 
@@ -40,6 +41,14 @@ def load_global_config():
 
 # Load config immediately
 load_global_config()
+def get_proxy():
+    net_config = GLOBAL_CONFIG.get("net", {})
+    use_proxy = net_config.get("use_proxy", False)
+    proxy_url = net_config.get("proxy_url", "")
+    if use_proxy and proxy_url:
+        return proxy_url
+    return None
+gTTSfun.get_proxy = get_proxy
 
 # Fix pythonw output issues
 if sys.stdout is None:
@@ -69,7 +78,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("设置")
-        self.resize(400, 150)
+        self.resize(400, 200)
         self.setup_ui()
         self.load_settings()
 
@@ -79,9 +88,14 @@ class SettingsDialog(QDialog):
 
         self.gcloud_key_edit = QLineEdit()
         self.hf_token_edit = QLineEdit()
+        self.use_proxy_cb = QCheckBox("使用代理")
+        self.proxy_url = QLineEdit()
+        self.use_proxy_cb.toggled.connect(self.proxy_url.setEnabled)
 
         form_layout.addRow("Google Cloud Key:", self.gcloud_key_edit)
         form_layout.addRow("HuggingFace Token:", self.hf_token_edit)
+        form_layout.addRow(self.use_proxy_cb)
+        form_layout.addRow("代理地址:", self.proxy_url)
 
         layout.addLayout(form_layout)
 
@@ -101,10 +115,18 @@ class SettingsDialog(QDialog):
         keys = GLOBAL_CONFIG.get('key', {})
         self.gcloud_key_edit.setText(str(keys.get('gcloud', '')))
         self.hf_token_edit.setText(str(keys.get('hf_token', '')))
+        
+        net_config = GLOBAL_CONFIG.get('net', {})
+        use_proxy = net_config.get('use_proxy', False)
+        self.use_proxy_cb.setChecked(use_proxy)
+        self.proxy_url.setText(str(net_config.get('proxy_url', '')))
+        self.proxy_url.setEnabled(use_proxy)
 
     def save_settings(self):
         new_gcloud = self.gcloud_key_edit.text().strip()
         new_hf = self.hf_token_edit.text().strip()
+        new_use_proxy = self.use_proxy_cb.isChecked()
+        new_proxy_url = self.proxy_url.text().strip()
         
         try:
             with open("conf.yaml", "r", encoding="utf-8") as f:
@@ -112,9 +134,13 @@ class SettingsDialog(QDialog):
             
             if 'key' not in data:
                 data['key'] = {}
+            if 'net' not in data:
+                data['net'] = {}
             
             data['key']['gcloud'] = new_gcloud
             data['key']['hf_token'] = new_hf
+            data['net']['use_proxy'] = new_use_proxy
+            data['net']['proxy_url'] = new_proxy_url
             
             with open("conf.yaml", "w", encoding="utf-8") as f:
                 yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
@@ -123,8 +149,13 @@ class SettingsDialog(QDialog):
             global GLOBAL_CONFIG
             if 'key' not in GLOBAL_CONFIG:
                 GLOBAL_CONFIG['key'] = {}
+            if 'net' not in GLOBAL_CONFIG:
+                GLOBAL_CONFIG['net'] = {}
+            
             GLOBAL_CONFIG['key']['gcloud'] = new_gcloud
             GLOBAL_CONFIG['key']['hf_token'] = new_hf
+            GLOBAL_CONFIG['net']['use_proxy'] = new_use_proxy
+            GLOBAL_CONFIG['net']['proxy_url'] = new_proxy_url
 
             QMessageBox.information(self, "成功", "设置已保存")
             self.accept()
