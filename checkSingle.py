@@ -2,11 +2,10 @@ import sys
 import os
 
 Single_mutex = None
-_lock_file_handle = None
 
 def check_single_instance(MUTEX_NAME = "Global\\SnippingTool_SingleInstance_v1.0"):
     """Check if another instance is running and prevent multiple instances."""
-    global Single_mutex, _lock_file_handle
+    global Single_mutex
 
     if sys.platform == 'win32':
         # Win32 dependencies for mutex/single instance check
@@ -30,9 +29,9 @@ def check_single_instance(MUTEX_NAME = "Global\\SnippingTool_SingleInstance_v1.0
         
         try:
             # Open file for writing; create if not exists
-            _lock_file_handle = open(lock_file_path, 'w')
+            Single_mutex = open(lock_file_path, 'w')
             # Try to acquire an exclusive lock without blocking
-            fcntl.lockf(_lock_file_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.lockf(Single_mutex, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except IOError:
             print("Another instance is already running.")
             sys.exit(1)

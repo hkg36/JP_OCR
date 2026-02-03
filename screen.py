@@ -535,7 +535,7 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error("发生未捕获异常！", exc_info=True)
         with open("error.log", "a", encoding="utf-8") as f:
-            f.write(f"\n{datetime.datetime.now()}\n{traceback.format_exc()}\n")
+            f.write(f"\n{datetime.datetime.now()}\n")
             f.write("--- 最近500行日志 ---\n")
             f.writelines(log_history)
             f.write("\n" + "="*50 + "\n")
