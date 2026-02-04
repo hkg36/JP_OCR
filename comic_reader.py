@@ -276,14 +276,7 @@ class ComicReader(QMainWindow):
         # 2. 加载需要的图片
         for idx in wanted_indices:
             if idx not in self.pixmap_cache:
-                img_name = self.image_files[idx]
-                try:
-                    data = self.current_zip.read(img_name)
-                    pixmap = QPixmap()
-                    if pixmap.loadFromData(data):
-                        self.pixmap_cache[idx] = pixmap
-                except Exception as e:
-                    print(f"加载图片出错 {img_name}: {e}")
+                self.load_image_at_index(idx)
     def load_image_at_index(self, index):
         if not self.current_zip or not self.image_files:
             return None
