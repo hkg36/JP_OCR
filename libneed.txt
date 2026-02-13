@@ -8,3 +8,8 @@ Pillow
 httpx
 PySide6
 natsort
+unidic-lite
+fugashi
+torch
+torchvision
+yaml

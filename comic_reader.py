@@ -328,7 +328,9 @@ class ComicReader(QMainWindow):
         #延迟加载前后图片
         QTimer.singleShot(0, self.load_images_around_current)
     def speed_curve(self,x):
-        return 7/(1+math.exp(-3*(x-2)))+3
+        if x<0.8:
+            return 4
+        return 10
     def handle_wheel_event(self, event: QWheelEvent):
         if not self.image_files:
             return
