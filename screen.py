@@ -233,10 +233,10 @@ class SnippingOverlay(QWidget):
     def pil2pixmap(self, im):
         if im.mode == "RGB":
             data = im.tobytes("raw", "RGB")
-            qim = QImage(data, im.size[0], im.size[1], QImage.Format_RGB888)
+            qim = QImage(data, im.size[0], im.size[1], QImage.Format.Format_RGB888)
         elif im.mode == "RGBA":
             data = im.tobytes("raw", "RGBA")
-            qim = QImage(data, im.size[0], im.size[1], QImage.Format_RGBA888)
+            qim = QImage(data, im.size[0], im.size[1], QImage.Format.Format_RGBA8888)
         else:
              # Fallback
              buf = io.BytesIO()
