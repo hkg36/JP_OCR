@@ -76,10 +76,17 @@ class ComicReader(QMainWindow):
         open_action.triggered.connect(self.open_zip_dialog)
         menu.addAction(open_action)
 
+        # 添加删除项，效果同按下 Del 键
+        delete_action = QAction("删除", self)
+        delete_action.triggered.connect(self.delete_current_file)
+        # 仅在有文件列表且索引有效时启用
+        delete_action.setEnabled(bool(self.zip_file_list) and self.current_zip_index >= 0)
+        menu.addAction(delete_action)
+
         exit_action = QAction("退出", self)
         exit_action.triggered.connect(self.close)
         menu.addAction(exit_action)
-        
+
         menu.exec(event.globalPos())
 
     def closeEvent(self, event):
@@ -172,7 +179,11 @@ class ComicReader(QMainWindow):
                  self.load_zip(file_to_delete)
 
     def open_zip_dialog(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "选择漫画压缩包", "E:/baks", "ZIP Files (*.zip);;All Files (*)")
+        initial_dir = "E:/baks"
+        if sys.platform.startswith('linux'):
+            initial_dir = os.path.expanduser('~/Downloads')
+
+        file_path, _ = QFileDialog.getOpenFileName(self, "选择漫画压缩包", initial_dir, "ZIP Files (*.zip);;All Files (*)")
         if file_path:
             # 获取同目录下的所有 ZIP 文件
             try:
