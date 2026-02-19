@@ -1,8 +1,8 @@
 .*/
 __pycache__/
 try*.py
-conf.ini
-conf.yaml
+*.ini
+*.yaml
 *.lnk
 tmp/
 *.log

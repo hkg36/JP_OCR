@@ -12,4 +12,3 @@ unidic-lite
 fugashi
 torch
 torchvision
-yaml

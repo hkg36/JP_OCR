@@ -2,6 +2,7 @@ import sys
 import os
 import time
 import zipfile
+import yaml
 import natsort as ns
 import math
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
@@ -29,6 +30,15 @@ class ComicReader(QMainWindow):
         self.last_wheel_time = 0  # 上次滚轮翻页的时间
         self.scroll_start_time = 0  # 连续滚动开始时间
         
+        # 加载配置
+        self.config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reader.yaml")
+        self.config = {}
+        self.initial_dir = "E:/baks"
+        if sys.platform.startswith('linux'):
+            self.initial_dir = os.path.expanduser('~/Downloads')
+            
+        self.load_config()
+
         # 初始内容
         self.image_label = QLabel("请右键点击 -> 打开 ZIP 加载漫画")
         self.image_label.setAlignment(Qt.AlignCenter)
@@ -90,8 +100,27 @@ class ComicReader(QMainWindow):
         menu.exec(event.globalPos())
 
     def closeEvent(self, event):
+        self.save_config()
         self.cleanup()
         super().closeEvent(event)
+
+    def load_config(self):
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    self.config = yaml.safe_load(f) or {}
+                    if 'last_dir' in self.config:
+                        self.initial_dir = self.config['last_dir']
+            except Exception as e:
+                print(f"读取配合失败: {e}")
+
+    def save_config(self):
+        try:
+            self.config['last_dir'] = self.initial_dir
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                yaml.safe_dump(self.config, f)
+        except Exception as e:
+            print(f"保存配置失败: {e}")
 
     def resizeEvent(self, event):
         self.show_current_page()
@@ -179,12 +208,10 @@ class ComicReader(QMainWindow):
                  self.load_zip(file_to_delete)
 
     def open_zip_dialog(self):
-        initial_dir = "E:/baks"
-        if sys.platform.startswith('linux'):
-            initial_dir = os.path.expanduser('~/Downloads')
-
-        file_path, _ = QFileDialog.getOpenFileName(self, "选择漫画压缩包", initial_dir, "ZIP Files (*.zip);;All Files (*)")
+        file_path, _ = QFileDialog.getOpenFileName(self, "选择漫画压缩包", self.initial_dir, "ZIP Files (*.zip);;All Files (*)")
         if file_path:
+            # 更新初始目录
+            self.initial_dir = os.path.dirname(file_path)
             # 获取同目录下的所有 ZIP 文件
             try:
                 folder = os.path.dirname(file_path)
