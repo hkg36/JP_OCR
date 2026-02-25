@@ -27,6 +27,12 @@ class ComicReader(QMainWindow):
         self.current_zip = None
         self.current_folder = None
         
+        # 文件夹模式状态变量
+        self.is_folder_mode = False
+        self.folder_image_files = []
+        self.current_folder_page_index = 0
+        self.folder_pixmap_cache = {}
+        
         self.last_wheel_time = 0  # 上次滚轮翻页的时间
         self.scroll_start_time = 0  # 连续滚动开始时间
         
@@ -40,11 +46,10 @@ class ComicReader(QMainWindow):
         self.load_config()
 
         # 初始内容
-        self.image_label = QLabel("请右键点击 -> 打开 ZIP 加载漫画")
+        self.image_label = QLabel("请右键点击 -> 打开 ZIP 或 图片 加载漫画")
         self.image_label.setAlignment(Qt.AlignCenter)
         # 允许 Label 调整大小
         self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-
         self.setCentralWidget(self.image_label)
 
         # 文件名显示 Label
@@ -81,16 +86,19 @@ class ComicReader(QMainWindow):
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         
-        open_action = QAction("打开 ZIP", self)
+        open_action = QAction("打开 ZIP 或 图片", self)
         open_action.setShortcut("Ctrl+O")
-        open_action.triggered.connect(self.open_zip_dialog)
+        open_action.triggered.connect(self.open_file_dialog)
         menu.addAction(open_action)
 
         # 添加删除项，效果同按下 Del 键
         delete_action = QAction("删除", self)
         delete_action.triggered.connect(self.delete_current_file)
         # 仅在有文件列表且索引有效时启用
-        delete_action.setEnabled(bool(self.zip_file_list) and self.current_zip_index >= 0)
+        if self.is_folder_mode:
+            delete_action.setEnabled(bool(self.folder_image_files) and self.current_folder_page_index >= 0)
+        else:
+            delete_action.setEnabled(bool(self.zip_file_list) and self.current_zip_index >= 0)
         menu.addAction(delete_action)
 
         exit_action = QAction("退出", self)
@@ -123,20 +131,29 @@ class ComicReader(QMainWindow):
             print(f"保存配置失败: {e}")
 
     def resizeEvent(self, event):
-        self.show_current_page()
+        if self.is_folder_mode:
+            self.show_current_folder_page()
+        else:
+            self.show_current_page()
         self.filename_label.raise_()
         self.progress_bar.raise_()
         super().resizeEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MiddleButton:
-            self.open_zip_dialog()
+            self.open_file_dialog()
             event.accept()
         elif event.button() == Qt.LeftButton:
-            if self.current_zip:
-                self.next_page()
+            if self.is_folder_mode:
+                if self.folder_image_files:
+                    self.next_page()
+                else:
+                    self.open_file_dialog()
             else:
-                self.open_zip_dialog()
+                if self.current_zip:
+                    self.next_page()
+                else:
+                    self.open_file_dialog()
             event.accept()
         else:
             super().mousePressEvent(event)
@@ -148,7 +165,63 @@ class ComicReader(QMainWindow):
             self.current_zip.close()
             self.current_zip = None
 
+    def cleanup_folder(self):
+        self.folder_pixmap_cache = {}
+        self.folder_image_files = []
+
     def delete_current_file(self):
+        if self.is_folder_mode:
+            self.delete_current_folder_image()
+        else:
+            self.delete_current_zip_file()
+
+    def delete_current_folder_image(self):
+        if not self.folder_image_files:
+            return
+
+        if self.current_folder_page_index < 0 or self.current_folder_page_index >= len(self.folder_image_files):
+            return
+
+        file_to_delete = self.folder_image_files[self.current_folder_page_index]
+        
+        # Remove from cache
+        if self.current_folder_page_index in self.folder_pixmap_cache:
+            del self.folder_pixmap_cache[self.current_folder_page_index]
+
+        try:
+            if not QFile.moveToTrash(file_to_delete):
+                print(f"移动到回收站失败: {file_to_delete}")
+                return
+
+            print(f"已移动到回收站: {file_to_delete}")
+            
+            del self.folder_image_files[self.current_folder_page_index]
+            
+            # Rebuild cache keys because indices changed
+            new_cache = {}
+            for idx, pixmap in self.folder_pixmap_cache.items():
+                if idx > self.current_folder_page_index:
+                    new_cache[idx - 1] = pixmap
+                elif idx < self.current_folder_page_index:
+                    new_cache[idx] = pixmap
+            self.folder_pixmap_cache = new_cache
+
+            if not self.folder_image_files:
+                self.current_folder_page_index = -1
+                self.image_label.setText("没有图片了")
+                self.image_label.clear()
+                self.filename_label.hide()
+                self.progress_bar.hide()
+            else:
+                if self.current_folder_page_index >= len(self.folder_image_files):
+                    self.current_folder_page_index = len(self.folder_image_files) - 1
+                
+                self.show_current_folder_page()
+
+        except Exception as e:
+            print(f"删除失败: {e}")
+
+    def delete_current_zip_file(self):
         if not self.zip_file_list:
             return
 
@@ -207,34 +280,66 @@ class ComicReader(QMainWindow):
             if os.path.exists(file_to_delete):
                  self.load_zip(file_to_delete)
 
-    def open_zip_dialog(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "选择漫画压缩包", self.initial_dir, "ZIP Files (*.zip);;All Files (*)")
+    def open_file_dialog(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "选择漫画压缩包或图片", self.initial_dir, "Supported Files (*.zip *.png *.jpg *.jpeg *.bmp *.gif *.webp);;ZIP Files (*.zip);;Image Files (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)")
         if file_path:
             # 更新初始目录
             self.initial_dir = os.path.dirname(file_path)
-            # 获取同目录下的所有 ZIP 文件
-            try:
-                folder = os.path.dirname(file_path)
-                self.current_folder = folder # 记录当前文件夹
-                files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith('.zip')]
-                # 排序
-                self.zip_file_list = ns.natsorted(files, alg=ns.IGNORECASE|ns.PATH)
-                
-                # 确定当前文件索引
-                abs_target = os.path.abspath(file_path)
-                abs_list = [os.path.abspath(p) for p in self.zip_file_list]
-                
-                if abs_target in abs_list:
-                    self.current_zip_index = abs_list.index(abs_target)
-                else:
-                    self.zip_file_list = [file_path]
-                    self.current_zip_index = 0
-            except Exception as e:
-                print(f"列表生成失败: {e}")
+            if file_path.lower().endswith('.zip'):
+                self.is_folder_mode = False
+                self.setup_zip_list(file_path)
+            else:
+                self.is_folder_mode = True
+                self.setup_folder_list(file_path)
+
+    def setup_zip_list(self, file_path):
+        # 获取同目录下的所有 ZIP 文件
+        try:
+            folder = os.path.dirname(file_path)
+            self.current_folder = folder # 记录当前文件夹
+            files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith('.zip')]
+            # 排序
+            self.zip_file_list = ns.natsorted(files, alg=ns.IGNORECASE|ns.PATH)
+            
+            # 确定当前文件索引
+            abs_target = os.path.abspath(file_path)
+            abs_list = [os.path.abspath(p) for p in self.zip_file_list]
+            
+            if abs_target in abs_list:
+                self.current_zip_index = abs_list.index(abs_target)
+            else:
                 self.zip_file_list = [file_path]
                 self.current_zip_index = 0
+        except Exception as e:
+            print(f"列表生成失败: {e}")
+            self.zip_file_list = [file_path]
+            self.current_zip_index = 0
 
-            self.load_zip(file_path)
+        self.load_zip(file_path)
+
+    def setup_folder_list(self, file_path):
+        self.cleanup_folder()
+        try:
+            folder = os.path.dirname(file_path)
+            self.current_folder = folder
+            valid_exts = ('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp')
+            files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(valid_exts)]
+            self.folder_image_files = ns.natsorted(files, alg=ns.IGNORECASE|ns.PATH)
+            
+            abs_target = os.path.abspath(file_path)
+            abs_list = [os.path.abspath(p) for p in self.folder_image_files]
+            
+            if abs_target in abs_list:
+                self.current_folder_page_index = abs_list.index(abs_target)
+            else:
+                self.folder_image_files = [file_path]
+                self.current_folder_page_index = 0
+        except Exception as e:
+            print(f"图片列表生成失败: {e}")
+            self.folder_image_files = [file_path]
+            self.current_folder_page_index = 0
+
+        self.show_current_folder_page()
 
     def load_prev_zip(self):
         if self.current_zip_index > 0:
@@ -365,13 +470,91 @@ class ComicReader(QMainWindow):
             self.image_label.setPixmap(scaled_pixmap)
         #延迟加载前后图片
         QTimer.singleShot(0, self.load_images_around_current)
+
+    def load_folder_image_at_index(self, index):
+        if not self.folder_image_files:
+            return None
+        if index < 0 or index >= len(self.folder_image_files):
+            return None
+
+        img_path = self.folder_image_files[index]
+        try:
+            pixmap = QPixmap(img_path)
+            if not pixmap.isNull():
+                self.folder_pixmap_cache[index] = pixmap
+                return pixmap
+        except Exception as e:
+            print(f"加载图片出错 {img_path}: {e}")
+            return None
+
+    def load_folder_images_around_current(self):
+        if not self.folder_image_files:
+            return
+
+        start_index = max(0, self.current_folder_page_index - 1)
+        end_index = min(len(self.folder_image_files) - 1, self.current_folder_page_index + 1)
+        wanted_indices = set(range(start_index, end_index + 1))
+        
+        for idx in list(self.folder_pixmap_cache.keys()):
+            if idx not in wanted_indices:
+                del self.folder_pixmap_cache[idx]
+        
+        for idx in wanted_indices:
+            if idx not in self.folder_pixmap_cache:
+                self.load_folder_image_at_index(idx)
+
+    def show_current_folder_page(self):
+        if not self.folder_image_files:
+            return
+        
+        self.progress_bar.setRange(0, len(self.folder_image_files))
+        self.progress_bar.setValue(self.current_folder_page_index + 1)
+        
+        # 显示文件名
+        current_file = self.folder_image_files[self.current_folder_page_index]
+        self.filename_label.setText(os.path.basename(current_file))
+        self.filename_label.adjustSize()
+        self.filename_label.show()
+        self.filename_label.raise_()
+
+        self.progress_bar.move(10, 12 + self.filename_label.height())
+        self.progress_bar.show()
+        self.progress_bar.raise_()
+
+        if 0 <= self.current_folder_page_index < len(self.folder_image_files):
+            original_pixmap = self.folder_pixmap_cache.get(self.current_folder_page_index)
+            
+            if not original_pixmap or original_pixmap.isNull():
+                original_pixmap = self.load_folder_image_at_index(self.current_folder_page_index)
+                if not original_pixmap:
+                    self.image_label.setText("无法加载图片")
+                    return
+                
+            viewport_size = self.image_label.size()
+            
+            if viewport_size.width() <= 0 or viewport_size.height() <= 0:
+                return
+
+            scaled_pixmap = original_pixmap.scaled(
+                viewport_size, 
+                Qt.KeepAspectRatio, 
+                Qt.SmoothTransformation
+            )
+            self.image_label.setPixmap(scaled_pixmap)
+            
+        QTimer.singleShot(0, self.load_folder_images_around_current)
+
     def speed_curve(self,x):
         if x<0.8:
             return 4
         return 10
     def handle_wheel_event(self, event: QWheelEvent):
-        if not self.image_files:
-            return
+        if self.is_folder_mode:
+            if not self.folder_image_files:
+                return
+        else:
+            if not self.image_files:
+                return
 
         current_time = time.time()
 
@@ -399,14 +582,24 @@ class ComicReader(QMainWindow):
             self.next_page()
 
     def prev_page(self):
-        if self.current_page_index > 0:
-            self.current_page_index -= 1
-            self.show_current_page()
+        if self.is_folder_mode:
+            if self.current_folder_page_index > 0:
+                self.current_folder_page_index -= 1
+                self.show_current_folder_page()
+        else:
+            if self.current_page_index > 0:
+                self.current_page_index -= 1
+                self.show_current_page()
 
     def next_page(self):
-        if self.current_page_index < len(self.image_files) - 1:
-            self.current_page_index += 1
-            self.show_current_page()
+        if self.is_folder_mode:
+            if self.current_folder_page_index < len(self.folder_image_files) - 1:
+                self.current_folder_page_index += 1
+                self.show_current_folder_page()
+        else:
+            if self.current_page_index < len(self.image_files) - 1:
+                self.current_page_index += 1
+                self.show_current_page()
 
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
@@ -418,10 +611,12 @@ class ComicReader(QMainWindow):
                 self.next_page()
                 event.accept()
             case Qt.Key_Up:
-                self.load_prev_zip()
+                if not self.is_folder_mode:
+                    self.load_prev_zip()
                 event.accept()
             case Qt.Key_Down:
-                self.load_next_zip()
+                if not self.is_folder_mode:
+                    self.load_next_zip()
                 event.accept()
             case Qt.Key_Delete:
                  self.delete_current_file()
