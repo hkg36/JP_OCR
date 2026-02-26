@@ -5,8 +5,12 @@ import zipfile
 import yaml
 import natsort as ns
 import math
+try:
+    from send2trash import send2trash
+except Exception:
+    send2trash = None
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
-                               QVBoxLayout, QLabel, QFileDialog, QSizePolicy, QMenu, QProgressBar)
+                               QVBoxLayout, QLabel, QFileDialog, QSizePolicy, QMenu, QProgressBar, QMessageBox)
 from PySide6.QtGui import QPixmap, QAction, QKeyEvent, QWheelEvent, QMouseEvent, QCursor
 from PySide6.QtCore import Qt, QTimer, QEvent, QFile
 
@@ -183,43 +187,54 @@ class ComicReader(QMainWindow):
             return
 
         file_to_delete = self.folder_image_files[self.current_folder_page_index]
+        folder_to_delete = os.path.dirname(file_to_delete)
+
+        confirm_box = QMessageBox(self)
+        confirm_box.setWindowTitle("确认删除")
+        confirm_box.setText(f"确认删除文件夹?\n{folder_to_delete}")
+        confirm_box.setIcon(QMessageBox.Warning)
+        confirm_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        confirm_box.setDefaultButton(QMessageBox.Yes)
+        confirm_box.setEscapeButton(QMessageBox.No)
+        if confirm_box.exec() != QMessageBox.Yes:
+            return
         
         # Remove from cache
         if self.current_folder_page_index in self.folder_pixmap_cache:
             del self.folder_pixmap_cache[self.current_folder_page_index]
 
         try:
-            if not QFile.moveToTrash(file_to_delete):
-                print(f"移动到回收站失败: {file_to_delete}")
+            if not os.path.isdir(folder_to_delete):
+                infobox=QMessageBox(self)
+                infobox.setWindowTitle("错误")
+                infobox.setText(f"目标不是文件夹: {folder_to_delete}")
+                infobox.setIcon(QMessageBox.Critical)
+                infobox.exec()
                 return
 
-            print(f"已移动到回收站: {file_to_delete}")
-            
-            del self.folder_image_files[self.current_folder_page_index]
-            
-            # Rebuild cache keys because indices changed
-            new_cache = {}
-            for idx, pixmap in self.folder_pixmap_cache.items():
-                if idx > self.current_folder_page_index:
-                    new_cache[idx - 1] = pixmap
-                elif idx < self.current_folder_page_index:
-                    new_cache[idx] = pixmap
-            self.folder_pixmap_cache = new_cache
+            if send2trash:
+                send2trash(folder_to_delete)
+            else:
+                if not QFile.moveToTrash(folder_to_delete):
+                    print(f"移动到回收站失败: {folder_to_delete}")
+                    return
 
-            if not self.folder_image_files:
+            print(f"已移动到回收站: {folder_to_delete}")
+
+            if self.current_folder and os.path.abspath(folder_to_delete) == os.path.abspath(self.current_folder):
+                self.cleanup_folder()
                 self.current_folder_page_index = -1
                 self.image_label.setText("没有图片了")
                 self.image_label.clear()
                 self.filename_label.hide()
                 self.progress_bar.hide()
-            else:
-                if self.current_folder_page_index >= len(self.folder_image_files):
-                    self.current_folder_page_index = len(self.folder_image_files) - 1
-                
-                self.show_current_folder_page()
-
+                return
         except Exception as e:
-            print(f"删除失败: {e}")
+            infobox=QMessageBox(self)
+            infobox.setWindowTitle("错误")
+            infobox.setText(f"删除失败: {e}")
+            infobox.setIcon(QMessageBox.Critical)
+            infobox.exec()
 
     def delete_current_zip_file(self):
         if not self.zip_file_list:
@@ -275,7 +290,11 @@ class ComicReader(QMainWindow):
                 self.load_zip(self.zip_file_list[self.current_zip_index])
 
         except Exception as e:
-            print(f"删除失败: {e}")
+            infobox=QMessageBox(self)
+            infobox.setWindowTitle("错误")
+            infobox.setText(f"删除失败: {e}")
+            infobox.setIcon(QMessageBox.Critical)
+            infobox.exec()
             # 恢复（尝试重新加载，如果没删掉的话）
             if os.path.exists(file_to_delete):
                  self.load_zip(file_to_delete)
