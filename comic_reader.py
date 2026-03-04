@@ -5,10 +5,6 @@ import zipfile
 import yaml
 import natsort as ns
 import math
-try:
-    from send2trash import send2trash
-except Exception:
-    send2trash = None
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
                                QVBoxLayout, QLabel, QFileDialog, QSizePolicy, QMenu, QProgressBar, QMessageBox)
 from PySide6.QtGui import QPixmap, QAction, QKeyEvent, QWheelEvent, QMouseEvent, QCursor
@@ -189,6 +185,15 @@ class ComicReader(QMainWindow):
         file_to_delete = self.folder_image_files[self.current_folder_page_index]
         folder_to_delete = os.path.dirname(file_to_delete)
 
+        # 检查是否为根目录，不能删除根目录
+        if os.path.dirname(folder_to_delete) == folder_to_delete:
+            infobox = QMessageBox(self)
+            infobox.setWindowTitle("错误")
+            infobox.setText("不能删除根目录")
+            infobox.setIcon(QMessageBox.Critical)
+            infobox.exec()
+            return
+
         confirm_box = QMessageBox(self)
         confirm_box.setWindowTitle("确认删除")
         confirm_box.setText(f"确认删除文件夹?\n{folder_to_delete}")
@@ -212,12 +217,9 @@ class ComicReader(QMainWindow):
                 infobox.exec()
                 return
 
-            if send2trash:
-                send2trash(folder_to_delete)
-            else:
-                if not QFile.moveToTrash(folder_to_delete):
-                    print(f"移动到回收站失败: {folder_to_delete}")
-                    return
+            if not QFile.moveToTrash(folder_to_delete):
+                print(f"移动到回收站失败: {folder_to_delete}")
+                return
 
             print(f"已移动到回收站: {folder_to_delete}")
 
@@ -498,7 +500,10 @@ class ComicReader(QMainWindow):
 
         img_path = self.folder_image_files[index]
         try:
-            pixmap = QPixmap(img_path)
+            with open(img_path, 'rb') as f:
+                data = f.read()
+            pixmap = QPixmap()
+            pixmap.loadFromData(data)
             if not pixmap.isNull():
                 self.folder_pixmap_cache[index] = pixmap
                 return pixmap
