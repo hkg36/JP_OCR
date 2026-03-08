@@ -186,7 +186,8 @@ class ComicReader(QMainWindow):
         folder_to_delete = os.path.dirname(file_to_delete)
 
         # 检查是否为根目录，不能删除根目录
-        if os.path.dirname(folder_to_delete) == folder_to_delete:
+        parent_folder = os.path.dirname(folder_to_delete)
+        if parent_folder == folder_to_delete:
             infobox = QMessageBox(self)
             infobox.setWindowTitle("错误")
             infobox.setText("不能删除根目录")
@@ -596,14 +597,13 @@ class ComicReader(QMainWindow):
         if current_time - self.last_wheel_time < limit:
             return
             
-        self.last_wheel_time = current_time
-            
         angle = event.angleDelta().y()
         # 向上滚动查看上一页，向下滚动查看下一页
         if angle > 0:
             self.prev_page()
         else:
             self.next_page()
+        self.last_wheel_time = time.time()
 
     def prev_page(self):
         if self.is_folder_mode:
