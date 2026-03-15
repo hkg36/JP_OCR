@@ -14,6 +14,7 @@ class ComicReader(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("漫画阅读器")
+        self.setFocusPolicy(Qt.StrongFocus)
         
         # 去掉标题栏
         self.setWindowFlags(Qt.FramelessWindowHint)
@@ -50,6 +51,7 @@ class ComicReader(QMainWindow):
         self.image_label.setAlignment(Qt.AlignCenter)
         # 允许 Label 调整大小
         self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.image_label.setFocusPolicy(Qt.NoFocus)
         self.setCentralWidget(self.image_label)
 
         # 文件名显示 Label
@@ -64,6 +66,7 @@ class ComicReader(QMainWindow):
         self.progress_bar = QSlider(Qt.Horizontal, self)
         self.progress_bar.setFixedWidth(300)
         self.progress_bar.setFixedHeight(20)
+        self.progress_bar.setFocusPolicy(Qt.NoFocus)
         self.progress_bar.setStyleSheet("""
             QSlider {
                 background-color: rgba(0, 0, 0, 0);
@@ -86,6 +89,14 @@ class ComicReader(QMainWindow):
 
         # 连接进度条信号
         self.progress_bar.valueChanged.connect(self.on_progress_changed)
+
+        # 窗口级快捷键：无须打开右键菜单也可使用
+        self.open_shortcut_action = QAction("打开 ZIP 或 图片", self)
+        self.open_shortcut_action.setShortcut("Ctrl+O")
+        self.open_shortcut_action.setShortcutContext(Qt.WindowShortcut)
+        self.open_shortcut_action.triggered.connect(self.open_file_dialog)
+        self.addAction(self.open_shortcut_action)
+        self.setFocus()
 
     def wheelEvent(self, event: QWheelEvent):
         self.handle_wheel_event(event)
@@ -148,6 +159,7 @@ class ComicReader(QMainWindow):
         super().resizeEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent):
+        self.setFocus()
         if event.button() == Qt.MiddleButton:
             self.open_file_dialog()
             event.accept()
@@ -321,6 +333,7 @@ class ComicReader(QMainWindow):
             else:
                 self.is_folder_mode = True
                 self.setup_folder_list(file_path)
+        self.setFocus()
 
     def setup_zip_list(self, file_path):
         # 获取同目录下的所有 ZIP 文件
@@ -649,6 +662,7 @@ class ComicReader(QMainWindow):
 
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
+        print(f"按键: {key} ({event.text()})")
         match key:
             case Qt.Key_Left | Qt.Key_PageUp:
                 self.prev_page()
