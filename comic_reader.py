@@ -6,7 +6,7 @@ import yaml
 import natsort as ns
 import math
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
-                               QVBoxLayout, QLabel, QFileDialog, QSizePolicy, QMenu, QProgressBar, QMessageBox)
+                               QVBoxLayout, QLabel, QFileDialog, QSizePolicy, QMenu, QSlider, QMessageBox)
 from PySide6.QtGui import QPixmap, QAction, QKeyEvent, QWheelEvent, QMouseEvent, QCursor
 from PySide6.QtCore import Qt, QTimer, QEvent, QFile
 
@@ -61,23 +61,31 @@ class ComicReader(QMainWindow):
         self.filename_label.hide()
 
         # 进度条
-        self.progress_bar = QProgressBar(self)
+        self.progress_bar = QSlider(Qt.Horizontal, self)
         self.progress_bar.setFixedWidth(300)
-        self.progress_bar.setFixedHeight(2)
-        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(20)
         self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: none;
-                background-color: rgba(0, 0, 0, 160);
+            QSlider {
+                background-color: rgba(0, 0, 0, 0);
             }
-            QProgressBar::chunk {
-                background-color: rgba(255, 100, 100, 200); 
+            QSlider::groove:horizontal {
+                background-color: rgba(0, 0, 0, 160);
+                height: 2px;
+            }
+            QSlider::handle:horizontal {
+                background-color: rgba(255, 100, 100, 200);
+                width: 10px;
+                margin: -5px 0;
+                border-radius: 5px;
             }
         """)
         self.progress_bar.hide()
 
         # 启动时最大化
         self.showMaximized()
+
+        # 连接进度条信号
+        self.progress_bar.valueChanged.connect(self.on_progress_changed)
 
     def wheelEvent(self, event: QWheelEvent):
         self.handle_wheel_event(event)
@@ -410,8 +418,8 @@ class ComicReader(QMainWindow):
                 return
 
             self.image_files = image_files
-            self.progress_bar.setRange(0, len(self.image_files))
-            self.progress_bar.setValue(0)
+            self.progress_bar.setRange(1, len(self.image_files))
+            self.progress_bar.setValue(1)
             
         except Exception as e:
             print(f"打开 ZIP 出错: {e}")
@@ -464,8 +472,10 @@ class ComicReader(QMainWindow):
         if not self.image_files:
             return
         
-        self.progress_bar.setRange(0, len(self.image_files))
+        self.progress_bar.setRange(1, len(self.image_files))
+        self.progress_bar.blockSignals(True)
         self.progress_bar.setValue(self.current_page_index + 1)
+        self.progress_bar.blockSignals(False)
         
         if 0 <= self.current_page_index < len(self.image_files):
             original_pixmap = self.pixmap_cache.get(self.current_page_index)
@@ -532,8 +542,10 @@ class ComicReader(QMainWindow):
         if not self.folder_image_files:
             return
         
-        self.progress_bar.setRange(0, len(self.folder_image_files))
+        self.progress_bar.setRange(1, len(self.folder_image_files))
+        self.progress_bar.blockSignals(True)
         self.progress_bar.setValue(self.current_folder_page_index + 1)
+        self.progress_bar.blockSignals(False)
         
         # 显示文件名
         current_file = self.folder_image_files[self.current_folder_page_index]
@@ -623,6 +635,16 @@ class ComicReader(QMainWindow):
         else:
             if self.current_page_index < len(self.image_files) - 1:
                 self.current_page_index += 1
+                self.show_current_page()
+
+    def on_progress_changed(self, value):
+        if self.is_folder_mode:
+            if 0 <= value - 1 < len(self.folder_image_files):
+                self.current_folder_page_index = value - 1
+                self.show_current_folder_page()
+        else:
+            if 0 <= value - 1 < len(self.image_files):
+                self.current_page_index = value - 1
                 self.show_current_page()
 
     def keyPressEvent(self, event: QKeyEvent):
