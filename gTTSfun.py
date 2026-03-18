@@ -85,7 +85,6 @@ def translate_with_api_key(text="Hello, world!", target="zh-CN", api_key="YOUR_A
     recent_buffer_translate.put(text, translated_text)
     return translated_text
 if __name__ == "__main__":
-    import pygame
     import yaml
     with open("conf.yaml", "r", encoding="utf-8") as f:
          config = yaml.safe_load(f)
@@ -96,10 +95,6 @@ if __name__ == "__main__":
     translated_text = translate_with_api_key(text=srctext, target="zh-CN", api_key=gcloud_api_key)
     print(f"翻译结果: {translated_text}")
     audio = japanese_tts(srctext)
-    # with open("output.mp3", "wb") as f:
-    #     f.write(audio.getvalue())
-    pygame.mixer.init()
-    pygame.mixer.music.load(audio)
-    pygame.mixer.music.play()
-    while pygame.mixer.music.get_busy():
-        pygame.time.Clock().tick(10)
+    with open("output.mp3", "wb") as f:
+        f.write(audio.getvalue())
+    print("语音已写入 output.mp3")

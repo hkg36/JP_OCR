@@ -20,13 +20,13 @@ from PySide6.QtWidgets import (QApplication, QWidget, QSystemTrayIcon, QMenu,
                                QLineEdit, QPushButton, QHBoxLayout, QMessageBox,
                                QCheckBox)
 from PySide6.QtCore import (Qt, QTimer, Signal, QObject, QPoint, QRect, 
-                            QSize, Slot)
+                            QSize, Slot, QByteArray, QBuffer, QIODevice, QUrl)
 from PySide6.QtGui import (QPainter, QPixmap, QColor, QPen, QFont, QAction, 
                            QIcon, QImage, QCursor, QGuiApplication, QClipboard)
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
 from PIL import ImageGrab, Image
 from pynput import keyboard
-import pygame
 import ocr
 import gTTSfun
 
@@ -77,6 +77,7 @@ class Signaller(QObject):
     start_snip_signal = Signal()
     replay_sound_signal = Signal()
     translation_done_signal = Signal(str)
+    tts_ready_signal = Signal(bytes)
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -383,14 +384,20 @@ class SnippingTool(QObject):
         
         # Initialize Logic
         self.mocr = ocr.MangaOcr(force_cpu=True)
-        pygame.mixer.init()
         self.executor = ThreadPoolExecutor(max_workers=1)
+        self.audio_output = QAudioOutput(self)
+        self.audio_player = QMediaPlayer(self)
+        self.audio_player.setAudioOutput(self.audio_output)
+        self.audio_player.errorOccurred.connect(self.on_audio_error)
+        self.audio_buffer = None
+        self.last_audio_data = b""
         
         # Signal bridge
         self.signaller = Signaller()
         self.signaller.start_snip_signal.connect(self.start_snip)
         self.signaller.replay_sound_signal.connect(self.replay_sound)
         self.signaller.translation_done_signal.connect(self.on_translate_done)
+        self.signaller.tts_ready_signal.connect(self.on_tts_ready)
         
         # UI Overlay
         self.overlay = SnippingOverlay(self)
@@ -465,20 +472,50 @@ class SnippingTool(QObject):
     def goPlaySound(self, sound_text):
         try:
             fp = gTTSfun.japanese_tts(text=sound_text)
-            sound = fp
-            sound.seek(0)
-            pygame.mixer.music.load(sound)
-            pygame.mixer.music.play()
+            self.signaller.tts_ready_signal.emit(fp.getvalue())
         except Exception as e:
             logger.error(f"语音播放失败: {e}")
+
+    @Slot(bytes)
+    def on_tts_ready(self, audio_data):
+        if not audio_data:
+            logger.error("语音播放失败: 音频数据为空")
+            return
+
+        self.last_audio_data = audio_data
+        self.audio_player.stop()
+
+        buffer = QBuffer(self)
+        buffer.setData(QByteArray(audio_data))
+        if not buffer.open(QIODevice.ReadOnly):
+            logger.error("语音播放失败: 无法打开音频缓冲区")
+            return
+
+        self.audio_buffer = buffer
+        self.audio_player.setSourceDevice(self.audio_buffer, QUrl("tts.mp3"))
+        self.audio_player.play()
 
     @Slot()
     def replay_sound(self):
         try:
-            pygame.mixer.music.rewind()
-            pygame.mixer.music.play()
+            if not self.last_audio_data:
+                logger.warning("暂无可重播的语音")
+                return
+
+            if self.audio_player.sourceDevice() is None:
+                self.on_tts_ready(self.last_audio_data)
+                return
+
+            self.audio_player.stop()
+            self.audio_player.setPosition(0)
+            self.audio_player.play()
         except Exception as e:
             logger.error(f"语音播放失败: {e}")
+
+    @Slot(QMediaPlayer.Error, str)
+    def on_audio_error(self, error, error_string):
+        if error != QMediaPlayer.Error.NoError:
+            logger.error(f"语音播放失败: {error_string}")
 
     def start_listener(self):
         def on_press(key):
@@ -508,6 +545,7 @@ class SnippingTool(QObject):
     def exit_app(self):
         if self.listener:
             self.listener.stop()
+        self.audio_player.stop()
         self.executor.shutdown(wait=False)
         QApplication.quit()
 
