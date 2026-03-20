@@ -1,3 +1,4 @@
+from loguru import logger
 import checkSingle
 checkSingle.check_single_instance()
 import sys
@@ -9,7 +10,7 @@ import io
 import yaml
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from loguru import logger
+import voicevox
 
 log_history = deque(maxlen=500)
 logger.add(log_history.append, format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}\n")
@@ -101,6 +102,14 @@ class SettingsDialog(QDialog):
         form_layout.addRow("HuggingFace Token:", self.hf_token_edit)
         form_layout.addRow(self.use_proxy_cb)
         form_layout.addRow("代理地址:", self.proxy_url)
+        self.voicevox_path_edit = QLineEdit()
+        self.voicevox_path_edit.setPlaceholderText("VOICEVOX 可执行文件路径（如 run.exe）")
+        self.voicevox_speaker_edit = QLineEdit()
+        self.voicevox_speaker_edit.setPlaceholderText("VOICEVOX 说话人 ID（整数）")
+        self.voicevox_speed_scale=QLineEdit()
+        form_layout.addRow("VoiceVox 路径:", self.voicevox_path_edit)
+        form_layout.addRow("VoiceVox 说话人 ID:", self.voicevox_speaker_edit)
+        form_layout.addRow("VoiceVox 语速:", self.voicevox_speed_scale)
 
         layout.addLayout(form_layout)
 
@@ -127,17 +136,39 @@ class SettingsDialog(QDialog):
         self.proxy_url.setText(str(net_config.get('proxy_url', '')))
         self.proxy_url.setEnabled(use_proxy)
 
+        local_config = GLOBAL_CONFIG.get('voicevox', {})
+        self.voicevox_path_edit.setText(str(local_config.get('src', '')))
+        self.voicevox_speaker_edit.setText(str(local_config.get('speaker_id', '')))
+        self.voicevox_speed_scale.setText(str(local_config.get('speed_scale', '')))
+
     def save_settings(self):
         new_gcloud = self.gcloud_key_edit.text().strip()
         new_hf = self.hf_token_edit.text().strip()
         new_use_proxy = self.use_proxy_cb.isChecked()
         new_proxy_url = self.proxy_url.text().strip()
-        
+        new_voicevox_path = self.voicevox_path_edit.text().strip()
+        new_voicevox_speaker = self.voicevox_speaker_edit.text().strip()
+        new_voicevox_speed_scale = self.voicevox_speed_scale.text().strip()
         try:
             with open("conf.yaml", "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             
             if 'key' not in data:
+                data['key'] = {}
+            if 'net' not in data:
+                data['net'] = {}
+            if 'voicevox' not in data:
+                data['voicevox'] = {}
+            
+            data['key']['gcloud'] = new_gcloud
+            data['key']['hf_token'] = new_hf
+            data['net']['use_proxy'] = new_use_proxy
+            data['net']['proxy_url'] = new_proxy_url
+            data['voicevox']['src'] = new_voicevox_path
+            data['voicevox']['speaker_id'] = new_voicevox_speaker
+            data['voicevox']['speed_scale'] = new_voicevox_speed_scale
+            
+            with open("conf.yaml", "w", encoding="utf-8") as f:
                 data['key'] = {}
             if 'net' not in data:
                 data['net'] = {}
@@ -388,6 +419,7 @@ class SnippingTool(QObject):
         self.audio_output = QAudioOutput(self)
         self.audio_player = QMediaPlayer(self)
         self.audio_player.setAudioOutput(self.audio_output)
+        self.audio_player.setPlaybackRate(1.0)
         self.audio_player.errorOccurred.connect(self.on_audio_error)
         self.audio_buffer = None
         self.last_audio_data = b""
@@ -471,6 +503,16 @@ class SnippingTool(QObject):
         
     def goPlaySound(self, sound_text):
         try:
+            fp = voicevox.japanese_tts(
+                text=sound_text,
+                speaker=GLOBAL_CONFIG.get("voicevox", {}).get("speaker_id", 68),
+                speed_scale=GLOBAL_CONFIG.get("voicevox", {}).get("speed_scale", 0.9),
+                output_sampling_rate=24000,
+            )
+            if fp is not None:
+                logger.info("VOICEVOX 已运行，使用 VOICEVOX TTS")
+                self.signaller.tts_ready_signal.emit(fp.getvalue())
+                return
             fp = gTTSfun.japanese_tts(text=sound_text)
             self.signaller.tts_ready_signal.emit(fp.getvalue())
         except Exception as e:
@@ -492,7 +534,11 @@ class SnippingTool(QObject):
             return
 
         self.audio_buffer = buffer
-        self.audio_player.setSourceDevice(self.audio_buffer, QUrl("tts.mp3"))
+        # VOICEVOX 返回 WAV，gTTS 返回 MP3；用后缀提示解码器避免错解导致异常倍速。
+        is_wav = len(audio_data) >= 12 and audio_data[:4] == b"RIFF" and audio_data[8:12] == b"WAVE"
+        source_name = "tts.wav" if is_wav else "tts.mp3"
+        self.audio_player.setSourceDevice(self.audio_buffer, QUrl(source_name))
+        self.audio_player.setPlaybackRate(1.0)
         self.audio_player.play()
 
     @Slot()
@@ -562,18 +608,25 @@ def enable_dpi_awareness():
             pass
 
 if __name__ == "__main__":
-    enable_dpi_awareness()
-    
+    # Qt6 manages DPI awareness on Windows by itself.
+    # Forcing legacy APIs first can make Qt's internal call fail with
+    # "SetProcessDpiAwarenessContext() failed: 拒绝访问".
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False) # Important for tray-only apps
 
     try:
+        voicevoxpath = GLOBAL_CONFIG.get("local", {}).get("voicevox", "VOICEVOX.exe")
+        if os.path.exists(voicevoxpath):
+            voicevox.start_voicevox_if_needed(
+                VOICEVOX_EXE=voicevoxpath,
+                VOICEVOX_ARGS=[]
+            )
+        else:
+            logger.warning("VOICEVOX 可执行文件路径未配置或不存在，请在设置中检查")
         tool = SnippingTool()
         sys.exit(app.exec())
     except Exception as e:
         logger.error("发生未捕获异常！", exc_info=True)
-        with open("error.log", "a", encoding="utf-8") as f:
-            f.write(f"\n{datetime.datetime.now()}\n")
-            f.write("--- 最近500行日志 ---\n")
-            f.writelines(log_history)
-            f.write("\n" + "="*50 + "\n")
+        print(e)
+    finally:
+        voicevox.stop_voicevox()
