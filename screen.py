@@ -617,12 +617,10 @@ if __name__ == "__main__":
 
     try:
         voicevoxpath = GLOBAL_CONFIG.get("voicevox", {}).get("src", "VOICEVOX.exe")
-        if os.path.exists(voicevoxpath) or re.match(r"^https?://", voicevoxpath, re.IGNORECASE):
-            voicevox.start_voicevox_if_needed(
+        if voicevox.start_voicevox_if_needed(
                 VOICEVOX_EXE=voicevoxpath,
                 VOICEVOX_ARGS=[]
-            )
-        else:
+            )==False:
             logger.warning("VOICEVOX 可执行文件路径未配置或不存在，请在设置中检查")
         tool = SnippingTool()
         sys.exit(app.exec())

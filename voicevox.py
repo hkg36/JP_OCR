@@ -37,11 +37,17 @@ def start_voicevox_if_needed(VOICEVOX_EXE: str, VOICEVOX_ARGS: list[str]):
     if re.match(r"^https?://", VOICEVOX_EXE, re.IGNORECASE):
         ENGINE_URL=VOICEVOX_EXE
         logger.info(f"VOICEVOX_EXE 是 URL，设置 ENGINE_URL={ENGINE_URL}")
-        return
+        if is_voicevox_running():
+            logger.info("VOICEVOX 远程服务正常运行，直接使用")
+            return True
+        return False
+    if not Path(VOICEVOX_EXE).is_file():
+        logger.error(f"VOICEVOX 可执行文件不存在: {VOICEVOX_EXE}")
+        return False
     if is_voicevox_running():
         logger.info("VOICEVOX 已存在，直接复用（不启动新进程）")
         voicevox_proc = None  # 表示我们没启动新进程，关闭时不杀
-        return
+        return False
 
     logger.info("VOICEVOX 未运行，正在启动...")
     creationflags = 0
@@ -67,7 +73,7 @@ def start_voicevox_if_needed(VOICEVOX_EXE: str, VOICEVOX_ARGS: list[str]):
         stdin=subprocess.DEVNULL,
         cwd=Path(VOICEVOX_EXE).parent,
     )
-    return voicevox_proc
+    return True
 
 def stop_voicevox():
     global voicevox_proc
