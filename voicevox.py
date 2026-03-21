@@ -39,11 +39,24 @@ def start_voicevox_if_needed(VOICEVOX_EXE: str, VOICEVOX_ARGS: list[str]):
         return
 
     logger.info("VOICEVOX 未运行，正在启动...")
-    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+    creationflags = 0
+    startupinfo = None
+    if sys.platform == "win32":
+        # 方式1：使用 STARTUPINFO 隐藏窗口（最推荐）
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE  # 0x0 = SW_HIDE
+
+        # 方式2：或者使用 creationflags 中的 CREATE_NO_WINDOW（效果类似）
+        # creationflags |= subprocess.CREATE_NO_WINDOW   # 0x08000000
+
+        # 如果你同时需要进程组控制（kill 子进程树），可以组合使用
+        creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
 
     voicevox_proc = subprocess.Popen(
         [VOICEVOX_EXE] + VOICEVOX_ARGS,
         creationflags=creationflags,
+        startupinfo=startupinfo,
         stdout=subprocess.DEVNULL,  # 静默启动，或改成 PIPE 看日志
         stderr=subprocess.DEVNULL,
         stdin=subprocess.DEVNULL,

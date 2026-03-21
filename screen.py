@@ -615,7 +615,7 @@ if __name__ == "__main__":
     app.setQuitOnLastWindowClosed(False) # Important for tray-only apps
 
     try:
-        voicevoxpath = GLOBAL_CONFIG.get("local", {}).get("voicevox", "VOICEVOX.exe")
+        voicevoxpath = GLOBAL_CONFIG.get("voicevox", {}).get("src", "VOICEVOX.exe")
         if os.path.exists(voicevoxpath):
             voicevox.start_voicevox_if_needed(
                 VOICEVOX_EXE=voicevoxpath,
