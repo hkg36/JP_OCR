@@ -6,8 +6,9 @@ import os
 from io import BytesIO
 from pathlib import Path
 from loguru import logger
-
+import urllib.parse
 import signal
+import re
 
 # 配置
 #VOICEVOX_EXE = r"C:\path\to\your\voicevox_engine\voicevox_engine.exe"  # 改成实际路径
@@ -21,7 +22,7 @@ def is_voicevox_running() -> bool:
     """检测 VOICEVOX 是否已经在运行"""
     try:
         # 最轻量的检查：/version 端点
-        response = requests.get(f"{ENGINE_URL}/version")
+        response = requests.get(urllib.parse.urljoin(ENGINE_URL, "/version"))
         if response.status_code == 200:
             logger.info(f"VOICEVOX 已运行 (版本: {response.text.strip()})")
             return True
@@ -31,8 +32,12 @@ def is_voicevox_running() -> bool:
     return False
 
 def start_voicevox_if_needed(VOICEVOX_EXE: str, VOICEVOX_ARGS: list[str]):
-    global voicevox_proc
-
+    global voicevox_proc,ENGINE_URL
+    #如果VOICEVOX_EXE是URL,那么覆盖ENGINE_URL
+    if re.match(r"^https?://", VOICEVOX_EXE, re.IGNORECASE):
+        ENGINE_URL=VOICEVOX_EXE
+        logger.info(f"VOICEVOX_EXE 是 URL，设置 ENGINE_URL={ENGINE_URL}")
+        return
     if is_voicevox_running():
         logger.info("VOICEVOX 已存在，直接复用（不启动新进程）")
         voicevox_proc = None  # 表示我们没启动新进程，关闭时不杀
@@ -93,7 +98,7 @@ def japanese_tts(
     output_sampling_rate: int = 24000,
 ) -> BytesIO:
     # 第一步：生成 audio_query（包含 sampling_rate）
-    query_url = f"{ENGINE_URL}/audio_query"
+    query_url = urllib.parse.urljoin(ENGINE_URL, "/audio_query")
     query_params = {"text": text, "speaker": speaker}
     response = requests.post(query_url, params=query_params)
     if response.status_code != 200:
@@ -108,7 +113,7 @@ def japanese_tts(
 
 
     # 第二步：合成音频
-    synth_url = f"{ENGINE_URL}/synthesis"
+    synth_url = urllib.parse.urljoin(ENGINE_URL, "/synthesis")
     synth_params = {"speaker": speaker}
     audio_response = requests.post(synth_url, params=synth_params, json=query)
     if audio_response.status_code != 200:
@@ -124,7 +129,7 @@ def japanese_tts(
 # 主程序示例
 if __name__ == "__main__":
     try:
-        start_voicevox_if_needed("D:\\apps\\voicevox_engine-windows-cpu\\run.exe", [])
+        start_voicevox_if_needed("http://192.168.1.4:50021", [])
 
         time.sleep(3)  # 模拟
         running=is_voicevox_running()

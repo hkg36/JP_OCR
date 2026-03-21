@@ -11,6 +11,7 @@ import yaml
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import voicevox
+import re
 
 log_history = deque(maxlen=500)
 logger.add(log_history.append, format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}\n")
@@ -616,7 +617,7 @@ if __name__ == "__main__":
 
     try:
         voicevoxpath = GLOBAL_CONFIG.get("voicevox", {}).get("src", "VOICEVOX.exe")
-        if os.path.exists(voicevoxpath):
+        if os.path.exists(voicevoxpath) or re.match(r"^https?://", voicevoxpath, re.IGNORECASE):
             voicevox.start_voicevox_if_needed(
                 VOICEVOX_EXE=voicevoxpath,
                 VOICEVOX_ARGS=[]
