@@ -141,7 +141,7 @@ if __name__ == "__main__":
         running=is_voicevox_running()
         logger.info(f"主程序检测 VOICEVOX 运行状态: {running}")
         if running:
-            audio_stream = japanese_tts("今話しているのはこの俺お前の主ユウヤだ",68,speed_scale=0.9)
+            audio_stream = japanese_tts("今話しているのはこの俺お前の主ユウヤだ",30,speed_scale=0.9)
             if audio_stream is not None:
                 logger.info(f"生成的音频流大小: {audio_stream.getbuffer().nbytes} 字节")
                 import pygame

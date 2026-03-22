@@ -170,30 +170,11 @@ class SettingsDialog(QDialog):
             data['voicevox']['speed_scale'] = new_voicevox_speed_scale
             
             with open("conf.yaml", "w", encoding="utf-8") as f:
-                data['key'] = {}
-            if 'net' not in data:
-                data['net'] = {}
-            
-            data['key']['gcloud'] = new_gcloud
-            data['key']['hf_token'] = new_hf
-            data['net']['use_proxy'] = new_use_proxy
-            data['net']['proxy_url'] = new_proxy_url
-            
-            with open("conf.yaml", "w", encoding="utf-8") as f:
                 yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
                 
             # Update runtime config
             global GLOBAL_CONFIG
-            if 'key' not in GLOBAL_CONFIG:
-                GLOBAL_CONFIG['key'] = {}
-            if 'net' not in GLOBAL_CONFIG:
-                GLOBAL_CONFIG['net'] = {}
-            
-            GLOBAL_CONFIG['key']['gcloud'] = new_gcloud
-            GLOBAL_CONFIG['key']['hf_token'] = new_hf
-            GLOBAL_CONFIG['net']['use_proxy'] = new_use_proxy
-            GLOBAL_CONFIG['net']['proxy_url'] = new_proxy_url
-
+            GLOBAL_CONFIG=data
             QMessageBox.information(self, "成功", "设置已保存")
             self.accept()
         except Exception as e:
