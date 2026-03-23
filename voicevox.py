@@ -103,6 +103,10 @@ def japanese_tts(
     speed_scale: float = 1.0,
     output_sampling_rate: int = 24000,
 ) -> BytesIO:
+    text = text.strip()
+    speaker = int(speaker)
+    speed_scale = float(speed_scale)
+    output_sampling_rate = int(output_sampling_rate)
     # 第一步：生成 audio_query（包含 sampling_rate）
     query_url = urllib.parse.urljoin(ENGINE_URL, "/audio_query")
     query_params = {"text": text, "speaker": speaker}

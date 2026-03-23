@@ -399,10 +399,12 @@ class SnippingTool(QObject):
         self.mocr = ocr.MangaOcr(force_cpu=True)
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.audio_output = QAudioOutput(self)
+        self.audio_output.setVolume(1.0)
         self.audio_player = QMediaPlayer(self)
         self.audio_player.setAudioOutput(self.audio_output)
         self.audio_player.setPlaybackRate(1.0)
         self.audio_player.errorOccurred.connect(self.on_audio_error)
+        
         self.audio_buffer = None
         self.last_audio_data = b""
         
