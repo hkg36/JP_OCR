@@ -193,8 +193,7 @@ class ComicReader(QMainWindow):
         if self.current_folder_page_index < 0 or self.current_folder_page_index >= len(self.folder_image_files):
             return
 
-        file_to_delete = self.folder_image_files[self.current_folder_page_index]
-        folder_to_delete = os.path.dirname(file_to_delete)
+        folder_to_delete = self.current_folder
 
         # 检查是否为根目录，不能删除根目录
         parent_folder = os.path.dirname(folder_to_delete)
@@ -235,14 +234,14 @@ class ComicReader(QMainWindow):
 
             print(f"已移动到回收站: {folder_to_delete}")
 
-            if self.current_folder and os.path.abspath(folder_to_delete) == os.path.abspath(self.current_folder):
-                self.cleanup_folder()
-                self.current_folder_page_index = -1
-                self.image_label.setText("没有图片了")
-                self.image_label.clear()
-                self.filename_label.hide()
-                self.progress_bar.hide()
-                return
+            #current_folder设置成上级目录
+            self.current_folder = os.path.dirname(self.current_folder)
+            self.cleanup_folder()
+            self.current_folder_page_index = -1
+            self.image_label.setText("没有图片了")
+            self.image_label.clear()
+            self.filename_label.hide()
+            self.progress_bar.hide()
         except Exception as e:
             infobox=QMessageBox(self)
             infobox.setWindowTitle("错误")
@@ -356,8 +355,19 @@ class ComicReader(QMainWindow):
             folder = os.path.dirname(file_path)
             self.current_folder = folder
             valid_exts = ('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp')
-            files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(valid_exts)]
-            self.folder_image_files = ns.natsorted(files, alg=ns.IGNORECASE|ns.PATH)
+            files = []
+            for root, _, filenames in os.walk(folder):
+                for filename in filenames:
+                    if filename.lower().endswith(valid_exts):
+                        files.append(os.path.join(root, filename))
+            rel_nat_key = ns.natsort_keygen(alg=ns.IGNORECASE | ns.PATH)
+            self.folder_image_files = sorted(
+                files,
+                key=lambda p: (
+                    0 if os.path.dirname(os.path.relpath(p, folder)) in ('', '.') else 1,
+                    rel_nat_key(os.path.relpath(p, folder)),
+                ),
+            )
             
             abs_target = os.path.abspath(file_path)
             abs_list = [os.path.abspath(p) for p in self.folder_image_files]

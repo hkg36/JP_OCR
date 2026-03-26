@@ -175,7 +175,7 @@ class SettingsDialog(QDialog):
             # Update runtime config
             global GLOBAL_CONFIG
             GLOBAL_CONFIG=data
-            QMessageBox.information(self, "成功", "设置已保存")
+            #QMessageBox.information(self, "成功", "设置已保存")
             self.accept()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"保存失败: {str(e)}")
