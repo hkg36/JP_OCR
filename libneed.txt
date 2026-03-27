@@ -13,3 +13,4 @@ fugashi
 torch
 torchvision
 pywin32
+pydantic

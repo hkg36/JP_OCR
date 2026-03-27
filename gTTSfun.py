@@ -2,6 +2,7 @@ import httpx
 from io import BytesIO
 import re
 from collections import OrderedDict
+from openai import OpenAI
 
 class RecentCache:
     def __init__(self, capacity: int = 3):
@@ -83,6 +84,38 @@ def translate_with_api_key(text="Hello, world!", target="zh-CN", api_key="YOUR_A
     result = response.json()
     translated_text = result["data"]["translations"][0]["translatedText"]
     recent_buffer_translate.put(text, translated_text)
+    return translated_text
+
+__ai_client = None
+def get_ai_client(base_url=None):
+    global __ai_client
+    if __ai_client is None and base_url is not None:
+        __ai_client = OpenAI(
+            base_url=base_url,   # 注意是 /v1
+            api_key=""              # llama-server 不需要真实 key，随便填
+        )
+    return __ai_client
+    
+def translate_with_local_model(text="Hello, world!"):
+    client = get_ai_client()
+
+    response = client.chat.completions.create(
+        model="qwen2.5-1.5b",                  # 模型名随便写，llama-server 基本忽略或用文件名
+        messages=[
+            {
+                "role": "system",
+                "content": "将日语翻译成中文，保留原文细节，不要意译。"
+            },
+            {
+                "role": "user",
+                "content": text
+            }
+        ],
+        temperature=0.3,
+        max_tokens=8192
+    )
+
+    translated_text = response.choices[0].message.content
     return translated_text
 if __name__ == "__main__":
     import yaml

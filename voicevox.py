@@ -9,6 +9,7 @@ from loguru import logger
 import urllib.parse
 import signal
 import re
+from pydantic import validate_call
 
 # 配置
 #VOICEVOX_EXE = r"C:\path\to\your\voicevox_engine\voicevox_engine.exe"  # 改成实际路径
@@ -31,6 +32,7 @@ def is_voicevox_running() -> bool:
 
     return False
 
+@validate_call
 def start_voicevox_if_needed(VOICEVOX_EXE: str, VOICEVOX_ARGS: list[str]):
     global voicevox_proc,ENGINE_URL
     #如果VOICEVOX_EXE是URL,那么覆盖ENGINE_URL
@@ -97,16 +99,13 @@ def stop_voicevox():
 
     voicevox_proc = None
 
+@validate_call
 def japanese_tts(
     text: str = "こんにちは、これはテスト文です。",
     speaker: int = 8,
     speed_scale: float = 1.0,
     output_sampling_rate: int = 24000,
 ) -> BytesIO:
-    text = text.strip()
-    speaker = int(speaker)
-    speed_scale = float(speed_scale)
-    output_sampling_rate = int(output_sampling_rate)
     # 第一步：生成 audio_query（包含 sampling_rate）
     query_url = urllib.parse.urljoin(ENGINE_URL, "/audio_query")
     query_params = {"text": text, "speaker": speaker}
@@ -139,13 +138,13 @@ def japanese_tts(
 # 主程序示例
 if __name__ == "__main__":
     try:
-        start_voicevox_if_needed("http://192.168.1.4:50021", [])
+        start_voicevox_if_needed("http://localhost:50021", [])
 
         time.sleep(3)  # 模拟
         running=is_voicevox_running()
         logger.info(f"主程序检测 VOICEVOX 运行状态: {running}")
         if running:
-            audio_stream = japanese_tts("今話しているのはこの俺お前の主ユウヤだ",30,speed_scale=0.9)
+            audio_stream = japanese_tts("今話しているのはこの俺お前の主ユウヤだ","30",speed_scale="0.9")
             if audio_stream is not None:
                 logger.info(f"生成的音频流大小: {audio_stream.getbuffer().nbytes} 字节")
                 import pygame

@@ -112,6 +112,10 @@ class SettingsDialog(QDialog):
         form_layout.addRow("VoiceVox 说话人 ID:", self.voicevox_speaker_edit)
         form_layout.addRow("VoiceVox 语速:", self.voicevox_speed_scale)
 
+        self.localmodel_edit = QLineEdit()
+        form_layout.addRow("本地翻译模型 URL:", self.localmodel_edit)
+
+
         layout.addLayout(form_layout)
 
         btn_layout = QHBoxLayout()
@@ -142,6 +146,10 @@ class SettingsDialog(QDialog):
         self.voicevox_speaker_edit.setText(str(local_config.get('speaker_id', '')))
         self.voicevox_speed_scale.setText(str(local_config.get('speed_scale', '')))
 
+        translate_config = GLOBAL_CONFIG.get('translate', {})
+        self.localmodel_edit.setText(str(translate_config.get('local_model', '')))
+
+
     def save_settings(self):
         new_gcloud = self.gcloud_key_edit.text().strip()
         new_hf = self.hf_token_edit.text().strip()
@@ -150,6 +158,7 @@ class SettingsDialog(QDialog):
         new_voicevox_path = self.voicevox_path_edit.text().strip()
         new_voicevox_speaker = self.voicevox_speaker_edit.text().strip()
         new_voicevox_speed_scale = self.voicevox_speed_scale.text().strip()
+        new_local_model = self.localmodel_edit.text().strip()
         try:
             with open("conf.yaml", "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
@@ -160,7 +169,8 @@ class SettingsDialog(QDialog):
                 data['net'] = {}
             if 'voicevox' not in data:
                 data['voicevox'] = {}
-            
+            if 'translate' not in data:
+                data['translate'] = {}
             data['key']['gcloud'] = new_gcloud
             data['key']['hf_token'] = new_hf
             data['net']['use_proxy'] = new_use_proxy
@@ -168,6 +178,7 @@ class SettingsDialog(QDialog):
             data['voicevox']['src'] = new_voicevox_path
             data['voicevox']['speaker_id'] = new_voicevox_speaker
             data['voicevox']['speed_scale'] = new_voicevox_speed_scale
+            data['translate']['local_model'] = new_local_model
             
             with open("conf.yaml", "w", encoding="utf-8") as f:
                 yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
@@ -468,6 +479,10 @@ class SnippingTool(QObject):
         
     def go_translate(self, text):
         try:
+            if gTTSfun.get_ai_client():
+                translated = gTTSfun.translate_with_local_model(text=text)
+                self.signaller.translation_done_signal.emit(translated)
+                return
             # Running in thread
             api_key = GLOBAL_CONFIG.get("key", {}).get("gcloud", "")
             translated = gTTSfun.translate_with_api_key(text=text, target="zh-CN", api_key=api_key)
@@ -605,6 +620,7 @@ if __name__ == "__main__":
                 VOICEVOX_ARGS=[]
             )==False:
             logger.warning("VOICEVOX 可执行文件路径未配置或不存在，请在设置中检查")
+        gTTSfun.get_ai_client(base_url=GLOBAL_CONFIG.get("translate", {}).get("local_model", None))
         tool = SnippingTool()
         sys.exit(app.exec())
     except Exception as e:
