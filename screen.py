@@ -24,7 +24,8 @@ from PySide6.QtWidgets import (QApplication, QWidget, QSystemTrayIcon, QMenu,
 from PySide6.QtCore import (Qt, QTimer, Signal, QObject, QPoint, QRect, 
                             QSize, Slot, QByteArray, QBuffer, QIODevice, QUrl)
 from PySide6.QtGui import (QPainter, QPixmap, QColor, QPen, QFont, QAction, 
-                           QIcon, QImage, QCursor, QGuiApplication, QClipboard)
+                           QIcon, QImage, QCursor, QGuiApplication, QClipboard,
+                           QFontMetrics)
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
 from PIL import ImageGrab, Image
@@ -79,7 +80,76 @@ class Signaller(QObject):
     start_snip_signal = Signal()
     replay_sound_signal = Signal()
     translation_done_signal = Signal(str)
+    translation_error_signal = Signal(str)
     tts_ready_signal = Signal(bytes)
+
+
+class BottomMessageOverlay(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.message = ""
+        self.padding_x = 18
+        self.padding_y = 12
+        self.max_width = 720
+
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.hide()
+
+        self.hide_timer = QTimer(self)
+        self.hide_timer.setSingleShot(True)
+        self.hide_timer.timeout.connect(self.hide)
+
+    def show_message(self, text, timeout_ms=5000):
+        self.message = text.strip()
+        if not self.message:
+            self.hide()
+            return
+
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+
+        available = screen.availableGeometry()
+        font = QFont(fontname, 12)
+        self.setFont(font)
+        metrics = QFontMetrics(font)
+        text_width = min(self.max_width, max(320, available.width() - 80))
+        text_rect = metrics.boundingRect(
+            QRect(0, 0, text_width, 1000),
+            Qt.TextWordWrap | Qt.AlignLeft,
+            self.message,
+        )
+
+        width = min(text_rect.width() + self.padding_x * 2, available.width() - 32)
+        height = text_rect.height() + self.padding_y * 2
+        x = available.x() + (available.width() - width) // 2
+        y = available.bottom() - height - 24
+
+        self.setGeometry(x, y, width, height)
+        self.show()
+        self.raise_()
+        self.update()
+        self.hide_timer.start(timeout_ms)
+
+    def paintEvent(self, event):
+        if not self.message:
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(25, 25, 28, 235))
+        painter.drawRoundedRect(self.rect(), 12, 12)
+
+        painter.setPen(QColor(255, 244, 244))
+        painter.setFont(self.font())
+        text_rect = self.rect().adjusted(self.padding_x, self.padding_y, -self.padding_x, -self.padding_y)
+        painter.drawText(text_rect, Qt.TextWordWrap | Qt.AlignLeft | Qt.AlignVCenter, self.message)
+
+    def hideEvent(self, event):
+        self.message = ""
+        super().hideEvent(event)
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -88,7 +158,6 @@ class SettingsDialog(QDialog):
         self.resize(400, 200)
         self.setup_ui()
         self.load_settings()
-
     def setup_ui(self):
         layout = QVBoxLayout(self)
         form_layout = QFormLayout()
@@ -431,10 +500,12 @@ class SnippingTool(QObject):
         self.signaller.start_snip_signal.connect(self.start_snip)
         self.signaller.replay_sound_signal.connect(self.replay_sound)
         self.signaller.translation_done_signal.connect(self.on_translate_done)
+        self.signaller.translation_error_signal.connect(self.on_translate_error)
         self.signaller.tts_ready_signal.connect(self.on_tts_ready)
         
         # UI Overlay
         self.overlay = SnippingOverlay(self)
+        self.message_overlay = BottomMessageOverlay()
         
         # System Tray Icon
         self.tray_icon = QSystemTrayIcon(self)
@@ -468,7 +539,7 @@ class SnippingTool(QObject):
         self.listener = None
         self.alt_pressed = False
         self.start_listener()
-
+        self.message_overlay.show_message("启动完成", timeout_ms=5000)
     def open_settings(self):
         dlg = SettingsDialog()
         dlg.exec()
@@ -485,13 +556,16 @@ class SnippingTool(QObject):
         self.executor.submit(self.go_translate, text)
         
     def go_translate(self, text):
+        error_messages = []
+
         #阿里翻译
         try:
             translated = gTTSfun.translate_with_ali(text)
             self.signaller.translation_done_signal.emit(translated)
             return
         except Exception as e:
-            self.signaller.translation_done_signal.emit(f"阿里云百炼翻译失败: {str(e)}")
+            error_messages.append(f"阿里云百炼翻译失败: {str(e)}")
+
         #google翻译
         try:
             api_key = GLOBAL_CONFIG.get("key", {}).get("gcloud", "")
@@ -499,20 +573,28 @@ class SnippingTool(QObject):
             self.signaller.translation_done_signal.emit(translated)
             return
         except Exception as e:
-            self.signaller.translation_done_signal.emit(f"google翻译失败: {str(e)}")
+            error_messages.append(f"google翻译失败: {str(e)}")
+
         #本地模型
         try:
             translated = gTTSfun.translate_with_local_model(text=text)
             self.signaller.translation_done_signal.emit(translated)
             return
         except Exception as e:
-            self.signaller.translation_done_signal.emit(f"本地模型翻译失败: {str(e)}")
+            error_messages.append(f"本地模型翻译失败: {str(e)}")
+
+        self.signaller.translation_error_signal.emit("\n".join(error_messages))
 
     @Slot(str)
     def on_translate_done(self, text):
         logger.info(f"翻译结果：{text}")
         if self.overlay.isVisible():
             self.overlay.set_translation(text)
+
+    @Slot(str)
+    def on_translate_error(self, message):
+        logger.error(f"翻译失败：{message}")
+        self.message_overlay.show_message(message, timeout_ms=5000)
 
     def play_sound(self, text):
         self.executor.submit(self.goPlaySound, text)
