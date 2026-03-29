@@ -114,7 +114,10 @@ class SettingsDialog(QDialog):
 
         self.localmodel_edit = QLineEdit()
         form_layout.addRow("本地翻译模型 URL:", self.localmodel_edit)
-
+        
+        self.ali_key_edit = QLineEdit()
+        self.ali_key_edit.setPlaceholderText("阿里云百炼 API Key（sk-xxx）")
+        form_layout.addRow("阿里云百炼 Key:", self.ali_key_edit)
 
         layout.addLayout(form_layout)
 
@@ -134,6 +137,7 @@ class SettingsDialog(QDialog):
         keys = GLOBAL_CONFIG.get('key', {})
         self.gcloud_key_edit.setText(str(keys.get('gcloud', '')))
         self.hf_token_edit.setText(str(keys.get('hf_token', '')))
+        self.ali_key_edit.setText(str(keys.get('ali_key', '')))
         
         net_config = GLOBAL_CONFIG.get('net', {})
         use_proxy = net_config.get('use_proxy', False)
@@ -159,6 +163,8 @@ class SettingsDialog(QDialog):
         new_voicevox_speaker = self.voicevox_speaker_edit.text().strip()
         new_voicevox_speed_scale = self.voicevox_speed_scale.text().strip()
         new_local_model = self.localmodel_edit.text().strip()
+        new_ali_key = self.ali_key_edit.text().strip()
+
         try:
             with open("conf.yaml", "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
@@ -173,6 +179,7 @@ class SettingsDialog(QDialog):
                 data['translate'] = {}
             data['key']['gcloud'] = new_gcloud
             data['key']['hf_token'] = new_hf
+            data['key']['ali_key'] = new_ali_key
             data['net']['use_proxy'] = new_use_proxy
             data['net']['proxy_url'] = new_proxy_url
             data['voicevox']['src'] = new_voicevox_path
@@ -478,18 +485,28 @@ class SnippingTool(QObject):
         self.executor.submit(self.go_translate, text)
         
     def go_translate(self, text):
+        #阿里翻译
         try:
-            if gTTSfun.get_ai_client():
-                translated = gTTSfun.translate_with_local_model(text=text)
-                self.signaller.translation_done_signal.emit(translated)
-                return
-            # Running in thread
+            translated = gTTSfun.translate_with_ali(text)
+            self.signaller.translation_done_signal.emit(translated)
+            return
+        except Exception as e:
+            self.signaller.translation_done_signal.emit(f"阿里云百炼翻译失败: {str(e)}")
+        #google翻译
+        try:
             api_key = GLOBAL_CONFIG.get("key", {}).get("gcloud", "")
             translated = gTTSfun.translate_with_api_key(text=text, target="zh-CN", api_key=api_key)
             self.signaller.translation_done_signal.emit(translated)
+            return
         except Exception as e:
-            logger.error(f"Translation failed: {e}")
-            self.signaller.translation_done_signal.emit(f"翻译失败: {str(e)}")
+            self.signaller.translation_done_signal.emit(f"google翻译失败: {str(e)}")
+        #本地模型
+        try:
+            translated = gTTSfun.translate_with_local_model(text=text)
+            self.signaller.translation_done_signal.emit(translated)
+            return
+        except Exception as e:
+            self.signaller.translation_done_signal.emit(f"本地模型翻译失败: {str(e)}")
 
     @Slot(str)
     def on_translate_done(self, text):
@@ -620,7 +637,8 @@ if __name__ == "__main__":
                 VOICEVOX_ARGS=[]
             )==False:
             logger.warning("VOICEVOX 可执行文件路径未配置或不存在，请在设置中检查")
-        gTTSfun.get_ai_client(base_url=GLOBAL_CONFIG.get("translate", {}).get("local_model", None))
+        gTTSfun.set_ai_client(base_url=GLOBAL_CONFIG.get("translate", {}).get("local_model", None))
+        gTTSfun.set_ali_ai_client(api_key=GLOBAL_CONFIG.get("key", {}).get("ali_key", None))
         tool = SnippingTool()
         sys.exit(app.exec())
     except Exception as e:

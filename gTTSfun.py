@@ -87,17 +87,17 @@ def translate_with_api_key(text="Hello, world!", target="zh-CN", api_key="YOUR_A
     return translated_text
 
 __ai_client = None
-def get_ai_client(base_url=None):
+def set_ai_client(base_url=None):
     global __ai_client
-    if __ai_client is None and base_url is not None:
-        __ai_client = OpenAI(
-            base_url=base_url,   # 注意是 /v1
-            api_key=""              # llama-server 不需要真实 key，随便填
-        )
-    return __ai_client
+    __ai_client = OpenAI(
+        base_url=base_url,   # 注意是 /v1
+        api_key=""              # llama-server 不需要真实 key，随便填
+    )
     
 def translate_with_local_model(text="Hello, world!"):
-    client = get_ai_client()
+    client = __ai_client
+    if client is None:
+        raise ValueError("AI client not set. Please call set_ai_client() first.")
 
     response = client.chat.completions.create(
         model="qwen2.5-1.5b",                  # 模型名随便写，llama-server 基本忽略或用文件名
@@ -117,11 +117,50 @@ def translate_with_local_model(text="Hello, world!"):
 
     translated_text = response.choices[0].message.content
     return translated_text
+
+__ali_ai_client = None
+def set_ali_ai_client(api_key=None):
+    global __ali_ai_client
+    __ali_ai_client = OpenAI(
+        api_key=api_key,
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
+def translate_with_ali(text="Hello, world!", source_lang="Japanese", target_lang="Chinese"):
+    client = __ali_ai_client
+    if client is None:
+        raise ValueError("Ali AI client not set. Please call set_ali_ai_client() first.")
+
+    messages = [
+        {
+            "role": "user",
+            "content": text
+        }
+    ]
+    translation_options = {
+        "source_lang": source_lang,
+        "target_lang": target_lang
+    }
+    response = client.chat.completions.create(
+        model="qwen-mt-flash",
+        messages=messages,
+        extra_body={
+            "translation_options": translation_options
+        }
+    )
+
+    translated_text = response.choices[0].message.content
+    return translated_text
+
 if __name__ == "__main__":
     import yaml
     with open("conf.yaml", "r", encoding="utf-8") as f:
          config = yaml.safe_load(f)
     gcloud_api_key = config["key"]["gcloud"]
+    src="期待以上に資料を見つけられた"
+    set_ali_ai_client(config["key"]["ali_key"])
+    translated = translate_with_ali(src)
+    print(f"阿里云百炼翻译结果: {translated}")
+    exit(0)
 
     # 示例使用
     srctext="こんにちは、世界。今日はいい天気です。"
