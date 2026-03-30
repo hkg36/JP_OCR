@@ -126,6 +126,10 @@ def set_ali_ai_client(api_key=None):
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
 def translate_with_ali(text="Hello, world!", source_lang="Japanese", target_lang="Chinese"):
+    buffer_res= recent_buffer_translate.get(text)
+    if buffer_res is not None:
+        print("使用缓存的翻译结果")
+        return buffer_res
     client = __ali_ai_client
     if client is None:
         raise ValueError("Ali AI client not set. Please call set_ali_ai_client() first.")
@@ -149,6 +153,7 @@ def translate_with_ali(text="Hello, world!", source_lang="Japanese", target_lang
     )
 
     translated_text = response.choices[0].message.content
+    recent_buffer_translate.put(text, translated_text)
     return translated_text
 
 if __name__ == "__main__":

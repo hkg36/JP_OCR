@@ -79,8 +79,8 @@ class Signaller(QObject):
     """Signal bridge for non-GUI threads."""
     start_snip_signal = Signal()
     replay_sound_signal = Signal()
-    translation_done_signal = Signal(str)
-    translation_error_signal = Signal(str)
+    translation_done_signal = Signal(int, str)
+    translation_error_signal = Signal(int, str)
     tts_ready_signal = Signal(bytes)
 
 
@@ -473,6 +473,7 @@ class SnippingOverlay(QWidget):
         self.update()
 
     def close_overlay(self):
+        self.controller.cancel_translate()
         self.hide()
         # Clear large images to free memory
         self.original_image = None
@@ -494,6 +495,13 @@ class SnippingTool(QObject):
         
         self.audio_buffer = None
         self.last_audio_data = b""
+        self.pending_translation_text = ""
+        self.translation_request_id = 0
+
+        self.translation_timer = QTimer(self)
+        self.translation_timer.setSingleShot(True)
+        self.translation_timer.setInterval(1000)
+        self.translation_timer.timeout.connect(self.submit_pending_translation)
         
         # Signal bridge
         self.signaller = Signaller()
@@ -553,15 +561,36 @@ class SnippingTool(QObject):
         self.overlay.start_capture()
         
     def start_translate(self, text):
-        self.executor.submit(self.go_translate, text)
+        self.translation_request_id += 1
+        self.pending_translation_text = text
+        self.translation_timer.start()
+
+    def cancel_translate(self):
+        self.translation_request_id += 1
+        self.pending_translation_text = ""
+        if self.translation_timer.isActive():
+            self.translation_timer.stop()
+
+    @Slot()
+    def submit_pending_translation(self):
+        text = self.pending_translation_text
+        request_id = self.translation_request_id
+        self.pending_translation_text = ""
+        if not text:
+            return
+        self.executor.submit(self.go_translate, request_id, text)
         
-    def go_translate(self, text):
+    def go_translate(self, request_id, text):
+        if request_id != self.translation_request_id:
+            return
+
         error_messages = []
 
         #阿里翻译
         try:
             translated = gTTSfun.translate_with_ali(text)
-            self.signaller.translation_done_signal.emit(translated)
+            if request_id == self.translation_request_id:
+                self.signaller.translation_done_signal.emit(request_id, translated)
             return
         except Exception as e:
             error_messages.append(f"阿里云百炼翻译失败: {str(e)}")
@@ -570,7 +599,8 @@ class SnippingTool(QObject):
         try:
             api_key = GLOBAL_CONFIG.get("key", {}).get("gcloud", "")
             translated = gTTSfun.translate_with_api_key(text=text, target="zh-CN", api_key=api_key)
-            self.signaller.translation_done_signal.emit(translated)
+            if request_id == self.translation_request_id:
+                self.signaller.translation_done_signal.emit(request_id, translated)
             return
         except Exception as e:
             error_messages.append(f"google翻译失败: {str(e)}")
@@ -578,21 +608,27 @@ class SnippingTool(QObject):
         #本地模型
         try:
             translated = gTTSfun.translate_with_local_model(text=text)
-            self.signaller.translation_done_signal.emit(translated)
+            if request_id == self.translation_request_id:
+                self.signaller.translation_done_signal.emit(request_id, translated)
             return
         except Exception as e:
             error_messages.append(f"本地模型翻译失败: {str(e)}")
 
-        self.signaller.translation_error_signal.emit("\n".join(error_messages))
+        if request_id == self.translation_request_id:
+            self.signaller.translation_error_signal.emit(request_id, "\n".join(error_messages))
 
-    @Slot(str)
-    def on_translate_done(self, text):
+    @Slot(int, str)
+    def on_translate_done(self, request_id, text):
+        if request_id != self.translation_request_id:
+            return
         logger.info(f"翻译结果：{text}")
         if self.overlay.isVisible():
             self.overlay.set_translation(text)
 
-    @Slot(str)
-    def on_translate_error(self, message):
+    @Slot(int, str)
+    def on_translate_error(self, request_id, message):
+        if request_id != self.translation_request_id:
+            return
         logger.error(f"翻译失败：{message}")
         self.message_overlay.show_message(message, timeout_ms=5000)
 
@@ -687,6 +723,7 @@ class SnippingTool(QObject):
         self.listener.start()
 
     def exit_app(self):
+        self.cancel_translate()
         if self.listener:
             self.listener.stop()
         self.audio_player.stop()
