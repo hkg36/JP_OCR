@@ -561,6 +561,10 @@ class SnippingTool(QObject):
         self.overlay.start_capture()
         
     def start_translate(self, text):
+        cached_translation = gTTSfun.lookup_translation_cache(text)
+        if cached_translation is not None:
+            self.signaller.translation_done_signal.emit(self.translation_request_id, cached_translation)
+            return
         self.translation_request_id += 1
         self.pending_translation_text = text
         self.translation_timer.start()

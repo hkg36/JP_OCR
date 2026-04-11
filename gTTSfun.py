@@ -30,6 +30,9 @@ session = None
 keepbuffer=3
 recent_buffer_tts = RecentCache(capacity=keepbuffer)
 recent_buffer_translate = RecentCache(capacity=keepbuffer)
+def lookup_translation_cache(text: str):
+    """从翻译缓存中查找文本的翻译结果"""
+    return recent_buffer_translate.get(text)
 def get_session():
     global session
     if session is None:
