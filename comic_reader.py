@@ -605,7 +605,7 @@ class ComicReader(QMainWindow):
             if not self.image_files:
                 return
 
-        current_time = time.monotonic()
+        current_time = time.time()
 
         # 如果距离上次翻页时间超过0.5秒，视为新的滚动操作，重置开始时间
         if current_time - self.last_wheel_time > 0.5:
@@ -627,6 +627,7 @@ class ComicReader(QMainWindow):
             self.prev_page()
         else:
             self.next_page()
+        self.last_wheel_time = time.time()
 
     def prev_page(self):
         if self.is_folder_mode:
