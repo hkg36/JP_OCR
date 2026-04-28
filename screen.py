@@ -541,6 +541,11 @@ class SnippingTool(QObject):
         action_exit = QAction("退出", self)
         action_exit.triggered.connect(self.exit_app)
         tray_menu.addAction(action_exit)
+
+        tray_menu.addSeparator()
+        test_voice = QAction("测试语音播放", self)
+        test_voice.triggered.connect(lambda: self.play_sound("これは音声合成テストです。"))
+        tray_menu.addAction(test_voice)
         
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()

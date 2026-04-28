@@ -5,8 +5,7 @@ import zipfile
 import yaml
 import natsort as ns
 import math
-from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
-                               QVBoxLayout, QLabel, QFileDialog, QSizePolicy, QMenu, QSlider, QMessageBox)
+from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QFileDialog, QSizePolicy, QMenu, QSlider, QMessageBox)
 from PySide6.QtGui import QPixmap, QAction, QKeyEvent, QWheelEvent, QMouseEvent, QCursor
 from PySide6.QtCore import Qt, QTimer, QEvent, QFile
 
@@ -606,9 +605,8 @@ class ComicReader(QMainWindow):
                 return
 
         current_time = time.time()
-
-        # 如果距离上次翻页时间超过0.5秒，视为新的滚动操作，重置开始时间
-        if current_time - self.last_wheel_time > 0.5:
+        # 如果距离上次翻页时间超过0.8秒，视为新的滚动操作，重置开始时间
+        if current_time - self.last_wheel_time > 0.8:
             self.scroll_start_time = current_time
 
         # 计算连续滚动的持续时间
@@ -617,7 +615,6 @@ class ComicReader(QMainWindow):
 
         # 根据 duration 动态设置速率限制
         limit=1.0/speed
-
         if current_time - self.last_wheel_time < limit:
             return
             
