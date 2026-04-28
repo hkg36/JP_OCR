@@ -36,6 +36,9 @@ class ComicReader(QMainWindow):
         
         self.last_wheel_time = 0  # 上次滚轮翻页的时间
         self.scroll_start_time = 0  # 连续滚动开始时间
+        self.last_change_time = 0  # 上次图片切换时间
+        self.wait_for_wheel_restart = False  # 翻页后需等待滚轮停顿，避免处理堆积事件
+        self.wheel_restart_gap = 0.22  # 认为是新一轮滚动的最小停顿秒数
         
         # 加载配置
         self.config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reader.yaml")
@@ -513,6 +516,7 @@ class ComicReader(QMainWindow):
                 Qt.SmoothTransformation
             )
             self.image_label.setPixmap(scaled_pixmap)
+            self.last_change_time = time.monotonic()
         #延迟加载前后图片
         QTimer.singleShot(0, self.load_images_around_current)
 
@@ -591,7 +595,7 @@ class ComicReader(QMainWindow):
                 Qt.SmoothTransformation
             )
             self.image_label.setPixmap(scaled_pixmap)
-            
+            self.last_change_time = time.monotonic()
         QTimer.singleShot(0, self.load_folder_images_around_current)
 
     def speed_curve(self,x):
@@ -606,7 +610,17 @@ class ComicReader(QMainWindow):
             if not self.image_files:
                 return
 
-        current_time = time.time()
+        current_time = time.monotonic()
+
+        # 刚翻完页时，要求滚轮先停顿一小段时间，防止旧事件队列触发二次翻页
+        if self.wait_for_wheel_restart:
+            if current_time - self.last_wheel_time <= self.wheel_restart_gap:
+                self.last_wheel_time = current_time
+                return
+            self.wait_for_wheel_restart = False
+
+        if current_time - self.last_change_time < 0.1:
+            return
 
         # 如果距离上次翻页时间超过0.5秒，视为新的滚动操作，重置开始时间
         if current_time - self.last_wheel_time > 0.5:
@@ -625,30 +639,39 @@ class ComicReader(QMainWindow):
         angle = event.angleDelta().y()
         # 向上滚动查看上一页，向下滚动查看下一页
         if angle > 0:
-            self.prev_page()
+            changed = self.prev_page()
         else:
-            self.next_page()
-        self.last_wheel_time = time.time()
+            changed = self.next_page()
+
+        if changed:
+            self.last_wheel_time = current_time
+            self.wait_for_wheel_restart = True
 
     def prev_page(self):
         if self.is_folder_mode:
             if self.current_folder_page_index > 0:
                 self.current_folder_page_index -= 1
                 self.show_current_folder_page()
+                return True
         else:
             if self.current_page_index > 0:
                 self.current_page_index -= 1
                 self.show_current_page()
+                return True
+        return False
 
     def next_page(self):
         if self.is_folder_mode:
             if self.current_folder_page_index < len(self.folder_image_files) - 1:
                 self.current_folder_page_index += 1
                 self.show_current_folder_page()
+                return True
         else:
             if self.current_page_index < len(self.image_files) - 1:
                 self.current_page_index += 1
                 self.show_current_page()
+                return True
+        return False
 
     def on_progress_changed(self, value):
         if self.is_folder_mode:
@@ -679,8 +702,9 @@ class ComicReader(QMainWindow):
                     self.load_next_zip()
                 event.accept()
             case Qt.Key_Delete:
-                 self.delete_current_file()
-                 event.accept()
+                self.delete_current_file()
+                self.last_change_time = time.monotonic()
+                event.accept()
             case Qt.Key_Escape:
                 self.close()
             case _:
