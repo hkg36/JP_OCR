@@ -180,6 +180,9 @@ class SettingsDialog(QDialog):
         form_layout.addRow("VoiceVox 路径:", self.voicevox_path_edit)
         form_layout.addRow("VoiceVox 说话人 ID:", self.voicevox_speaker_edit)
         form_layout.addRow("VoiceVox 语速:", self.voicevox_speed_scale)
+        voice_test=QPushButton("测试语音")
+        voice_test.clicked.connect(self.test_voicevox)
+        form_layout.addRow(voice_test)
 
         self.localmodel_edit = QLineEdit()
         form_layout.addRow("本地翻译模型 URL:", self.localmodel_edit)
@@ -202,6 +205,17 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
+    @Slot()
+    def test_voicevox(self):
+        new_voicevox_path = self.voicevox_path_edit.text().strip()
+        new_voicevox_speaker = self.voicevox_speaker_edit.text().strip()
+        new_voicevox_speed_scale = self.voicevox_speed_scale.text().strip()
+
+        global GLOBAL_CONFIG
+        GLOBAL_CONFIG['voicevox']['speaker_id'] = new_voicevox_speaker
+        GLOBAL_CONFIG['voicevox']['speed_scale'] = new_voicevox_speed_scale
+        GLOBAL_CONFIG['voicevox']['src'] = new_voicevox_path
+        tool.play_sound("これは音声合成テストです。")
     def load_settings(self):
         keys = GLOBAL_CONFIG.get('key', {})
         self.gcloud_key_edit.setText(str(keys.get('gcloud', '')))
@@ -541,11 +555,6 @@ class SnippingTool(QObject):
         action_exit = QAction("退出", self)
         action_exit.triggered.connect(self.exit_app)
         tray_menu.addAction(action_exit)
-
-        tray_menu.addSeparator()
-        test_voice = QAction("测试语音播放", self)
-        test_voice.triggered.connect(lambda: self.play_sound("これは音声合成テストです。"))
-        tray_menu.addAction(test_voice)
         
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
