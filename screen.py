@@ -12,6 +12,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import voicevox
 import re
+import httpx
 
 log_history = deque(maxlen=500)
 logger.add(log_history.append, format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}\n")
@@ -77,6 +78,7 @@ fontname = "微软雅黑"
 
 class Signaller(QObject):
     """Signal bridge for non-GUI threads."""
+    ocr_done_signal = Signal(str)
     start_snip_signal = Signal()
     replay_sound_signal = Signal()
     translation_done_signal = Signal(int, str)
@@ -191,6 +193,10 @@ class SettingsDialog(QDialog):
         self.ali_key_edit.setPlaceholderText("阿里云百炼 API Key（sk-xxx）")
         form_layout.addRow("阿里云百炼 Key:", self.ali_key_edit)
 
+        self.ocr_url_edit = QLineEdit()
+        self.ocr_url_edit.setPlaceholderText("OCR 服务器 URL")
+        form_layout.addRow("OCR 服务器 URL:", self.ocr_url_edit)
+
         layout.addLayout(form_layout)
 
         btn_layout = QHBoxLayout()
@@ -236,6 +242,8 @@ class SettingsDialog(QDialog):
         translate_config = GLOBAL_CONFIG.get('translate', {})
         self.localmodel_edit.setText(str(translate_config.get('local_model', '')))
 
+        ocr_config = GLOBAL_CONFIG.get('ocr', {})
+        self.ocr_url_edit.setText(str(ocr_config.get('server_url', '')))
 
     def save_settings(self):
         new_gcloud = self.gcloud_key_edit.text().strip()
@@ -247,6 +255,7 @@ class SettingsDialog(QDialog):
         new_voicevox_speed_scale = self.voicevox_speed_scale.text().strip()
         new_local_model = self.localmodel_edit.text().strip()
         new_ali_key = self.ali_key_edit.text().strip()
+        new_ocr_url = self.ocr_url_edit.text().strip()
 
         try:
             with open("conf.yaml", "r", encoding="utf-8") as f:
@@ -260,6 +269,8 @@ class SettingsDialog(QDialog):
                 data['voicevox'] = {}
             if 'translate' not in data:
                 data['translate'] = {}
+            if 'ocr' not in data:
+                data['ocr'] = {}
             data['key']['gcloud'] = new_gcloud
             data['key']['hf_token'] = new_hf
             data['key']['ali_key'] = new_ali_key
@@ -269,7 +280,8 @@ class SettingsDialog(QDialog):
             data['voicevox']['speaker_id'] = new_voicevox_speaker
             data['voicevox']['speed_scale'] = new_voicevox_speed_scale
             data['translate']['local_model'] = new_local_model
-            
+            data['ocr']['server_url'] = new_ocr_url
+
             with open("conf.yaml", "w", encoding="utf-8") as f:
                 yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
                 
@@ -464,7 +476,9 @@ class SnippingOverlay(QWidget):
         
         try:
             crop = self.original_image.crop((x, y, x + w, y + h))
-            
+
+            self.controller.start_ocr(crop)
+            """
             # Run OCR (blocking main thread briefly)
             result = self.controller.mocr(crop)
             self.ocr_result = result
@@ -481,10 +495,24 @@ class SnippingOverlay(QWidget):
             else:
                 # Start translation
                 self.controller.start_translate(result)
+                """
             
         except Exception as e:
             self.ocr_result = f"OCR Error: {e}"
             self.update()
+
+    def set_ocr_done(self, result):
+        self.ocr_result = result
+        QApplication.clipboard().setText(result)
+            
+        self.update()
+        
+        cached_translation = gTTSfun.lookup_translation_cache(result)
+        if cached_translation is not None:
+            self.set_translation(cached_translation)
+        else:
+            # Start translation
+            self.controller.start_translate(result)
 
     def set_translation(self, text):
         self.translate_result = text
@@ -502,7 +530,7 @@ class SnippingTool(QObject):
         super().__init__()
         
         # Initialize Logic
-        self.mocr = ocr.MangaOcr(force_cpu=True)
+        #self.mocr = ocr.MangaOcr(force_cpu=True)
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.audio_output = QAudioOutput(self)
         self.audio_output.setVolume(1.0)
@@ -523,6 +551,7 @@ class SnippingTool(QObject):
         
         # Signal bridge
         self.signaller = Signaller()
+        self.signaller.ocr_done_signal.connect(self.on_ocr_done)
         self.signaller.start_snip_signal.connect(self.start_snip)
         self.signaller.replay_sound_signal.connect(self.replay_sound)
         self.signaller.translation_done_signal.connect(self.on_translate_done)
@@ -635,6 +664,18 @@ class SnippingTool(QObject):
         if request_id == self.translation_request_id:
             self.signaller.translation_error_signal.emit(request_id, "\n".join(error_messages))
 
+    def start_ocr(self, image):
+        self.executor.submit(self.go_ocr, image)
+    def go_ocr(self, image):
+        try:
+            data=io.BytesIO()
+            image.save(data, format='WEBP', quality=80)
+            res = httpx.post(GLOBAL_CONFIG.get("ocr", {}).get("server_url", "http://localhost:8000/ocr"), data=data.getvalue(), timeout=30)
+            resdt = res.json()
+            self.signaller.ocr_done_signal.emit(resdt.get("result", ""))
+        except Exception as e:
+            logger.error(f"OCR 失败: {e}")
+            self.signaller.ocr_done_signal.emit(f"OCR Error: {e}")
     @Slot(int, str)
     def on_translate_done(self, request_id, text):
         if request_id != self.translation_request_id:
@@ -649,7 +690,11 @@ class SnippingTool(QObject):
             return
         logger.error(f"翻译失败：{message}")
         self.message_overlay.show_message(message, timeout_ms=5000)
-
+    @Slot(str)
+    def on_ocr_done(self, text):
+        logger.info(f"OCR 结果：{text}")
+        if self.overlay.isVisible():
+            self.overlay.set_ocr_done(text)
     def play_sound(self, text):
         self.executor.submit(self.goPlaySound, text)
         
