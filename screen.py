@@ -31,7 +31,7 @@ from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
 from PIL import ImageGrab, Image
 from pynput import keyboard
-import ocr
+#import ocr
 import gTTSfun
 
 # Global config storage

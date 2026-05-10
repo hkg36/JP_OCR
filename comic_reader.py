@@ -542,13 +542,16 @@ class ComicReader(QMainWindow):
         end_index = min(len(self.folder_image_files) - 1, self.current_folder_page_index + 1)
         wanted_indices = set(range(start_index, end_index + 1))
         
-        for idx in list(self.folder_pixmap_cache.keys()):
-            if idx not in wanted_indices:
-                del self.folder_pixmap_cache[idx]
-        
         for idx in wanted_indices:
             if idx not in self.folder_pixmap_cache:
                 self.load_folder_image_at_index(idx)
+                print(f"预加载图片: {self.folder_image_files[idx]} (索引 {idx})")
+                QTimer.singleShot(0, self.load_folder_images_around_current)
+                return
+        print("预加载完成，当前缓存索引:", list(self.folder_pixmap_cache.keys()))
+        for idx in list(self.folder_pixmap_cache.keys()):
+            if idx not in wanted_indices:
+                del self.folder_pixmap_cache[idx]
 
     def show_current_folder_page(self):
         if not self.folder_image_files:
