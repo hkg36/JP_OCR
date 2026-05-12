@@ -7,7 +7,19 @@ import natsort as ns
 import math
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QFileDialog, QSizePolicy, QMenu, QSlider, QMessageBox)
 from PySide6.QtGui import QPixmap, QAction, QKeyEvent, QWheelEvent, QMouseEvent, QCursor
-from PySide6.QtCore import Qt, QTimer, QEvent, QFile
+from PySide6.QtCore import Qt, QTimer, QEvent, QFile,QCoreApplication,QObject
+
+class LowPriorityTask(QEvent):
+    """自定义低优先级事件"""
+    EVENT_TYPE = QEvent.Type(QEvent.registerEventType())
+    
+    def __init__(self, callback):
+        super().__init__(self.EVENT_TYPE)
+        self.callback = callback   # 可以是 callable 或 lambda
+def post_low_priority_task(obj: QObject, callback):
+    """投递低优先级任务"""
+    event = LowPriorityTask(callback)
+    QCoreApplication.postEvent(obj, event, -100)  # 关键在这里
 
 class ComicReader(QMainWindow):
     def __init__(self):
@@ -513,7 +525,7 @@ class ComicReader(QMainWindow):
             )
             self.image_label.setPixmap(scaled_pixmap)
         #延迟加载前后图片
-        QTimer.singleShot(0, self.load_images_around_current)
+        post_low_priority_task(self, self.load_images_around_current)
 
     def load_folder_image_at_index(self, index):
         if not self.folder_image_files:
@@ -534,6 +546,14 @@ class ComicReader(QMainWindow):
             print(f"加载图片出错 {img_path}: {e}")
             return None
 
+    def customEvent(self, event: QEvent):
+        if event.type() == LowPriorityTask.EVENT_TYPE:
+            # 执行你的低优先级任务
+            event.callback()          # 或者 event.callback(self) 如果需要传 self
+            return
+        
+        # 其他自定义事件可以继续处理
+        super().customEvent(event)
     def load_folder_images_around_current(self):
         if not self.folder_image_files:
             return
@@ -546,7 +566,7 @@ class ComicReader(QMainWindow):
             if idx not in self.folder_pixmap_cache:
                 self.load_folder_image_at_index(idx)
                 print(f"预加载图片: {self.folder_image_files[idx]} (索引 {idx})")
-                QTimer.singleShot(0, self.load_folder_images_around_current)
+                post_low_priority_task(self, self.load_folder_images_around_current)
                 return
         print("预加载完成，当前缓存索引:", list(self.folder_pixmap_cache.keys()))
         for idx in list(self.folder_pixmap_cache.keys()):
