@@ -138,7 +138,7 @@ def japanese_tts(
 # 主程序示例
 if __name__ == "__main__":
     try:
-        start_voicevox_if_needed("http://localhost:50021", [])
+        start_voicevox_if_needed("http://192.168.1.4:50021", [])
 
         time.sleep(3)  # 模拟
         running=is_voicevox_running()

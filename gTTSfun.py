@@ -94,7 +94,7 @@ def set_ai_client(base_url=None):
     global __ai_client
     __ai_client = OpenAI(
         base_url=base_url,   # 注意是 /v1
-        api_key=""              # llama-server 不需要真实 key，随便填
+        api_key="sk-1234567890"              # llama-server 不需要真实 key，随便填
     )
     
 def translate_with_local_model(text="Hello, world!"):
