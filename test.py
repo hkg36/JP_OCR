@@ -17,7 +17,7 @@ if not not_network:
 
 TEST_DATA_ROOT = Path(__file__).parent / "test_data"
 
-mocr = ocr.MangaOcr(local_files_only=not_network,force_cpu=True)
+mocr = ocr.MangaOcr(local_files_only=not_network,force_cpu=False)
 
 expected_results = json.loads((TEST_DATA_ROOT / "expected_results.json").read_text(encoding="utf-8"))
 

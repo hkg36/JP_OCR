@@ -12,6 +12,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import voicevox
 import re
+import ocr
 import httpx
 
 log_history = deque(maxlen=500)
@@ -477,8 +478,8 @@ class SnippingOverlay(QWidget):
         try:
             crop = self.original_image.crop((x, y, x + w, y + h))
 
-            self.controller.start_ocr(crop)
-            """
+            #self.controller.start_ocr(crop)
+            
             # Run OCR (blocking main thread briefly)
             result = self.controller.mocr(crop)
             self.ocr_result = result
@@ -495,7 +496,7 @@ class SnippingOverlay(QWidget):
             else:
                 # Start translation
                 self.controller.start_translate(result)
-                """
+                
             
         except Exception as e:
             self.ocr_result = f"OCR Error: {e}"
@@ -530,7 +531,7 @@ class SnippingTool(QObject):
         super().__init__()
         
         # Initialize Logic
-        #self.mocr = ocr.MangaOcr(force_cpu=True)
+        self.mocr = ocr.MangaOcr(force_cpu=False)
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.audio_output = QAudioOutput(self)
         self.audio_output.setVolume(1.0)

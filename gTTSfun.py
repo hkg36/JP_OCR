@@ -102,23 +102,45 @@ def translate_with_local_model(text="Hello, world!"):
     if client is None:
         raise ValueError("AI client not set. Please call set_ai_client() first.")
 
+    ask=f'翻译成中文:{text}'
     response = client.chat.completions.create(
-        model="qwen2.5-1.5b",                  # 模型名随便写，llama-server 基本忽略或用文件名
+        model="CAT-Translate-1.4b.Q4_K_M",
         messages=[
             {
-                "role": "system",
-                "content": "将日语翻译成中文，保留原文细节，不要意译。"
-            },
-            {
                 "role": "user",
-                "content": text
+                "content": ask
             }
         ],
-        temperature=0.3,
-        max_tokens=8192
+        temperature=0.2,
     )
 
     translated_text = response.choices[0].message.content
+    return translated_text
+def translate_with_local_model_stream(text="Hello, world!"):
+    client = __ai_client
+    if client is None:
+        raise ValueError("AI client not set. Please call set_ai_client() first.")
+
+    ask=f'把日语翻译成中文:{text}'
+    response = client.chat.completions.create(
+        model="CAT-Translate-1.4b.Q4_K_M",
+        messages=[
+            {
+                "role": "user",
+                "content": ask
+            }
+        ],
+        temperature=0.3,
+        stream=True
+    )
+
+    translated_text = ""
+    for chunk in response:
+        translated_text_cell = chunk.choices[0].delta.content
+        if translated_text_cell:
+            translated_text += translated_text_cell
+            print(translated_text_cell, end="", flush=True)
+    print()  # 换行
     return translated_text
 
 __ali_ai_client = None
@@ -163,18 +185,20 @@ if __name__ == "__main__":
     import yaml
     with open("conf.yaml", "r", encoding="utf-8") as f:
          config = yaml.safe_load(f)
-    gcloud_api_key = config["key"]["gcloud"]
     src="期待以上に資料を見つけられた"
+    gcloud_api_key = config["key"]["gcloud"]
     set_ali_ai_client(config["key"]["ali_key"])
     translated = translate_with_ali(src)
     print(f"阿里云百炼翻译结果: {translated}")
     exit(0)
 
     # 示例使用
-    srctext="こんにちは、世界。今日はいい天気です。"
-    translated_text = translate_with_api_key(text=srctext, target="zh-CN", api_key=gcloud_api_key)
+    set_ai_client(config["translate"]["local_model"])
+    translated_text=translate_with_local_model(src)
+    #translated_text = translate_with_api_key(text=src, target="zh-CN", api_key=gcloud_api_key)
     print(f"翻译结果: {translated_text}")
-    audio = japanese_tts(srctext)
+    exit(0)
+    audio = japanese_tts(src)
     with open("output.mp3", "wb") as f:
         f.write(audio.getvalue())
     print("语音已写入 output.mp3")
