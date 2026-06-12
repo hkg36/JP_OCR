@@ -12,7 +12,6 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import voicevox
 import re
-import ocr
 import httpx
 
 log_history = deque(maxlen=500)
@@ -291,6 +290,7 @@ class SettingsDialog(QDialog):
             GLOBAL_CONFIG=data
             #QMessageBox.information(self, "成功", "设置已保存")
             self.accept()
+            tool.OcrConfigChange()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"保存失败: {str(e)}")
 
@@ -478,24 +478,24 @@ class SnippingOverlay(QWidget):
         try:
             crop = self.original_image.crop((x, y, x + w, y + h))
 
-            #self.controller.start_ocr(crop)
-            
-            # Run OCR (blocking main thread briefly)
-            result = self.controller.mocr(crop)
-            self.ocr_result = result
-            #logger.info(f"OCR Result: {result}")
-            
-            # Copy to clipboard
-            QApplication.clipboard().setText(result)
-            
-            self.update()
-            
-            cached_translation = gTTSfun.lookup_translation_cache(result)
-            if cached_translation is not None:
-                self.set_translation(cached_translation)
+            if self.controller.mocr is None:
+                self.controller.start_ocr(crop)
             else:
-                # Start translation
-                self.controller.start_translate(result)
+                result = self.controller.mocr(crop)
+                self.ocr_result = result
+                #logger.info(f"OCR Result: {result}")
+                
+                # Copy to clipboard
+                QApplication.clipboard().setText(result)
+                
+                self.update()
+                
+                cached_translation = gTTSfun.lookup_translation_cache(result)
+                if cached_translation is not None:
+                    self.set_translation(cached_translation)
+                else:
+                    # Start translation
+                    self.controller.start_translate(result)
                 
             
         except Exception as e:
@@ -531,7 +531,8 @@ class SnippingTool(QObject):
         super().__init__()
         
         # Initialize Logic
-        self.mocr = ocr.MangaOcr(force_cpu=False)
+        self.mocr=None
+        self.OcrConfigChange()
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.audio_output = QAudioOutput(self)
         self.audio_output.setVolume(1.0)
@@ -596,6 +597,13 @@ class SnippingTool(QObject):
         self.alt_pressed = False
         self.start_listener()
         self.message_overlay.show_message("启动完成", timeout_ms=5000)
+    def OcrConfigChange(self):
+        ocrserver_url = GLOBAL_CONFIG.get("ocr", {}).get("server_url", "")
+        if ocrserver_url and self.mocr is not None:
+            self.mocr = None
+        elif not ocrserver_url and self.mocr is None:
+            import ocr
+            self.mocr = ocr.MangaOcr(force_cpu=False)
     def open_settings(self):
         dlg = SettingsDialog()
         dlg.exec()
@@ -671,7 +679,7 @@ class SnippingTool(QObject):
         try:
             data=io.BytesIO()
             image.save(data, format='WEBP', quality=80)
-            res = httpx.post(GLOBAL_CONFIG.get("ocr", {}).get("server_url", "http://localhost:8000/ocr"), data=data.getvalue(), timeout=30)
+            res = httpx.post(GLOBAL_CONFIG.get("ocr", {}).get("server_url", ""), data=data.getvalue(), timeout=30)
             resdt = res.json()
             self.signaller.ocr_done_signal.emit(resdt.get("result", ""))
         except Exception as e:
