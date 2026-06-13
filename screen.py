@@ -603,7 +603,7 @@ class SnippingTool(QObject):
             self.mocr = None
         elif not ocrserver_url and self.mocr is None:
             import ocr
-            self.mocr = ocr.MangaOcr(force_cpu=False)
+            self.mocr = ocr.MangaOcr(force_cpu=False,local_files_only=True,pretrained_model_name_or_path=GLOBAL_CONFIG.get("ocr", {}).get("local_model", "kha-white/manga-ocr-base"))
     def open_settings(self):
         dlg = SettingsDialog()
         dlg.exec()
