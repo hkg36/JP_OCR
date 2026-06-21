@@ -396,27 +396,41 @@ class SnippingOverlay(QWidget):
         font = QFont(fontname, 14)
         painter.setFont(font)
         
-        # Draw below the selection rectangle
+        #如果选择框底部低于屏幕下1/5，且顶部也低于屏幕上1/5，则改为在选择框上方显示结果
+        screen = QGuiApplication.primaryScreen()
+        available = screen.availableGeometry()
         x_base = self.rect_selection.left()
-        y_base = self.rect_selection.bottom() + 10
-        max_w = max(100, self.width() - x_base) 
-        
-        last_y = y_base
+        max_w = max(100, self.width() - x_base)
+        drawabove = False
+        if self.rect_selection.bottom() > available.bottom() - available.height() / 5 and self.rect_selection.top() > available.top() + available.height() / 5:
+            drawabove = True
+        if drawabove:
+            # Draw above the selection rectangle
+            y_base = self.rect_selection.top() - 10
+        else:
+            # Draw below the selection rectangle
+            y_base = self.rect_selection.bottom() + 10
         
         # OCR Text
         if self.ocr_result:
-            rect = painter.boundingRect(QRect(x_base, last_y, max_w, 0), Qt.TextWordWrap | Qt.AlignLeft, self.ocr_result)
+            rect = painter.boundingRect(QRect(x_base, y_base, max_w, 0), Qt.TextWordWrap | Qt.AlignLeft, self.ocr_result)
+            if drawabove:
+                rect.moveTop(self.rect_selection.top() - 10 - rect.height())
             painter.fillRect(rect, QColor(0, 0, 0, 255))
             painter.setPen(Qt.white)
             painter.drawText(rect, Qt.TextWordWrap | Qt.AlignLeft, self.ocr_result)
-            last_y = rect.bottom() + 3
             
-        # Translation Text
-        if self.translate_result:
-            rect = painter.boundingRect(QRect(x_base, last_y, max_w, 0), Qt.TextWordWrap | Qt.AlignLeft, self.translate_result)
-            painter.fillRect(rect, QColor(0, 0, 0, 255))
-            painter.setPen(Qt.white)
-            painter.drawText(rect, Qt.TextWordWrap | Qt.AlignLeft, self.translate_result)
+            if self.translate_result:
+                trans_rect = painter.boundingRect(QRect(x_base, y_base, max_w, 0), Qt.TextWordWrap | Qt.AlignLeft, self.translate_result)
+                #原文在上方的话，翻译就在原文上方；原文在下方的话，翻译就在原文下方
+                if drawabove:
+                    trans_rect.moveTop(rect.top() - trans_rect.height() - 3)
+                else:
+                    trans_rect.moveTop(rect.bottom() + 3)
+
+                painter.fillRect(trans_rect, QColor(0, 0, 0, 255))
+                painter.setPen(Qt.white)
+                painter.drawText(trans_rect, Qt.TextWordWrap | Qt.AlignLeft, self.translate_result)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -566,6 +580,7 @@ class SnippingTool(QObject):
         
         # System Tray Icon
         self.tray_icon = QSystemTrayIcon(self)
+        self.tray_icon.setToolTip("日语截图翻译工具")
         if os.path.exists("data/tray.png"):
              self.tray_icon.setIcon(QIcon("data/tray.png"))
         else:

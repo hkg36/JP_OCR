@@ -6,3 +6,4 @@ try*.py
 *.lnk
 tmp/
 *.log
+data/nllb600m
