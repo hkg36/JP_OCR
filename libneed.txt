@@ -2,7 +2,6 @@ pynput
 jaconv
 pynput
 pystray
-transformers
 loguru
 Pillow
 httpx
@@ -12,3 +11,5 @@ unidic-lite
 fugashi
 pydantic
 bottle
+transformers==4.48.0
+tokenizers==0.21.0
