@@ -11,5 +11,5 @@ unidic-lite
 fugashi
 pydantic
 bottle
-transformers==4.48.0
-tokenizers==0.21.0
+transformers
+tokenizers

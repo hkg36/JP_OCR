@@ -12,10 +12,24 @@ class MangaOcrModel(VisionEncoderDecoderModel, GenerationMixin):
     pass
 
 class MangaOcr:
-    def __init__(self, pretrained_model_name_or_path="kha-white/manga-ocr-base", force_cpu=False,local_files_only=True):
+    def __init__(self, pretrained_model_name_or_path="kha-white/manga-ocr-base", force_cpu=False,local_files_only=True,covert_tokenizer="./tmp/newtoken"):
         logger.info(f"Loading OCR model from {pretrained_model_name_or_path}")
         self.processor = ViTImageProcessor.from_pretrained(pretrained_model_name_or_path,local_files_only=local_files_only)
-        self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path,local_files_only=local_files_only,use_fast=False)
+        try:
+            if Path(covert_tokenizer).exists():
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    covert_tokenizer,
+                    local_files_only=True,
+                    use_fast=True,
+                )
+            else:
+                raise ValueError(f"Tokenizer path {covert_tokenizer} does not exist.")
+        except (ImportError, OSError, ValueError):
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                pretrained_model_name_or_path,
+                local_files_only=local_files_only,
+                use_fast=False,
+            )
         self.model = MangaOcrModel.from_pretrained(pretrained_model_name_or_path,local_files_only=local_files_only)
         if not force_cpu and torch.cuda.is_available():
             logger.info("Using CUDA")
