@@ -13,3 +13,5 @@ pydantic
 bottle
 transformers
 tokenizers
+pywin32
+openai

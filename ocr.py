@@ -10,9 +10,10 @@ from transformers import ViTImageProcessor, AutoTokenizer, VisionEncoderDecoderM
 
 class MangaOcrModel(VisionEncoderDecoderModel, GenerationMixin):
     pass
-
+model="kha-white/manga-ocr-base"
+model="muscgab/manga-ocr-base-CPT"
 class MangaOcr:
-    def __init__(self, pretrained_model_name_or_path="kha-white/manga-ocr-base", force_cpu=False,local_files_only=True,covert_tokenizer="./tmp/newtoken"):
+    def __init__(self, pretrained_model_name_or_path=model, force_cpu=False,local_files_only=True,covert_tokenizer="./tmp/newtoken"):
         logger.info(f"Loading OCR model from {pretrained_model_name_or_path}")
         self.processor = ViTImageProcessor.from_pretrained(pretrained_model_name_or_path,local_files_only=local_files_only)
         try:

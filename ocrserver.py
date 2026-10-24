@@ -3,10 +3,9 @@ import ocr
 import io
 import yaml
 from PIL import Image
-with open("conf.yaml", "r", encoding="utf-8") as f:
-    conf = yaml.safe_load(f)
+from manga_ocr_cpt import MangaOcrCPT
 app = bottle.Bottle()
-mocr = ocr.MangaOcr(local_files_only=True,force_cpu=True,pretrained_model_name_or_path=conf["ocr"]["local_model"])
+mocr = MangaOcrCPT("flex")
 @app.route("/ocr", method="POST")
 def ocr_route():
     image = io.BytesIO(bottle.request.body.read())

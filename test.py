@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 import yaml
+from manga_ocr_cpt import MangaOcrCPT
 
 not_network = False
 if len(sys.argv) > 1 and sys.argv[1] == "--not-network":
@@ -17,7 +18,8 @@ if not not_network:
 
 TEST_DATA_ROOT = Path(__file__).parent / "test_data"
 
-mocr = ocr.MangaOcr(local_files_only=not_network,force_cpu=False,pretrained_model_name_or_path=conf["ocr"]["local_model"])
+#mocr = ocr.MangaOcr(local_files_only=not_network,force_cpu=False,pretrained_model_name_or_path=conf["ocr"]["local_model"])
+mocr = MangaOcrCPT("flex")
 
 expected_results = json.loads((TEST_DATA_ROOT / "expected_results.json").read_text(encoding="utf-8"))
 
