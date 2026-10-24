@@ -1,7 +1,5 @@
 import bottle
-import ocr
 import io
-import yaml
 from PIL import Image
 from manga_ocr_cpt_lib import MangaOcrCPT
 app = bottle.Bottle()
