@@ -157,7 +157,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("设置")
-        self.resize(400, 200)
+        self.resize(400, 240)
         self.setup_ui()
         self.load_settings()
     def setup_ui(self):
@@ -188,6 +188,10 @@ class SettingsDialog(QDialog):
 
         self.localmodel_edit = QLineEdit()
         form_layout.addRow("本地翻译模型 URL:", self.localmodel_edit)
+
+        self.local_ocr_model_edit = QLineEdit()
+        self.local_ocr_model_edit.setPlaceholderText("flex / 224 / Hugging Face 仓库 ID / 本地模型目录")
+        form_layout.addRow("本地 OCR 模型:", self.local_ocr_model_edit)
         
         self.ali_key_edit = QLineEdit()
         self.ali_key_edit.setPlaceholderText("阿里云百炼 API Key（sk-xxx）")
@@ -244,6 +248,7 @@ class SettingsDialog(QDialog):
 
         ocr_config = GLOBAL_CONFIG.get('ocr', {})
         self.ocr_url_edit.setText(str(ocr_config.get('server_url', '')))
+        self.local_ocr_model_edit.setText(str(ocr_config.get('local_model') or 'flex'))
 
     def save_settings(self):
         new_gcloud = self.gcloud_key_edit.text().strip()
@@ -254,6 +259,7 @@ class SettingsDialog(QDialog):
         new_voicevox_speaker = self.voicevox_speaker_edit.text().strip()
         new_voicevox_speed_scale = self.voicevox_speed_scale.text().strip()
         new_local_model = self.localmodel_edit.text().strip()
+        new_local_ocr_model = self.local_ocr_model_edit.text().strip()
         new_ali_key = self.ali_key_edit.text().strip()
         new_ocr_url = self.ocr_url_edit.text().strip()
 
@@ -281,6 +287,7 @@ class SettingsDialog(QDialog):
             data['voicevox']['speed_scale'] = new_voicevox_speed_scale
             data['translate']['local_model'] = new_local_model
             data['ocr']['server_url'] = new_ocr_url
+            data['ocr']['local_model'] = new_local_ocr_model
 
             with open("conf.yaml", "w", encoding="utf-8") as f:
                 yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
@@ -546,6 +553,7 @@ class SnippingTool(QObject):
         
         # Initialize Logic
         self.mocr=None
+        self._mocr_model = None
         self.OcrConfigChange()
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.audio_output = QAudioOutput(self)
@@ -613,12 +621,22 @@ class SnippingTool(QObject):
         self.start_listener()
         self.message_overlay.show_message("启动完成", timeout_ms=5000)
     def OcrConfigChange(self):
-        ocrserver_url = GLOBAL_CONFIG.get("ocr", {}).get("server_url", "")
+        ocr_config = GLOBAL_CONFIG.get("ocr", {})
+        ocrserver_url = str(ocr_config.get("server_url") or "").strip()
         if ocrserver_url and self.mocr is not None:
             self.mocr = None
-        elif not ocrserver_url and self.mocr is None:
-            import ocr
-            self.mocr = ocr.MangaOcr(force_cpu=False,local_files_only=True,pretrained_model_name_or_path=GLOBAL_CONFIG.get("ocr", {}).get("local_model", "kha-white/manga-ocr-base"))
+            self._mocr_model = None
+        elif not ocrserver_url:
+            model = str(ocr_config.get("local_model") or "flex").strip()
+            if not model:
+                model = "flex"
+            if self.mocr is not None and self._mocr_model != model:
+                self.mocr = None
+                self._mocr_model = None
+            if self.mocr is None:
+                from manga_ocr_cpt_lib import MangaOcrCPT
+                self.mocr = MangaOcrCPT(model, local_files_only=True)
+                self._mocr_model = model
     def open_settings(self):
         dlg = SettingsDialog()
         dlg.exec()
