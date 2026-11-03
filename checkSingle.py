@@ -9,10 +9,26 @@ def check_single_instance(MUTEX_NAME = "Global\\SnippingTool_SingleInstance_v1.0
 
     if sys.platform == 'win32':
         # Win32 dependencies for mutex/single instance check
-        import win32api, winerror, win32event
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        # 定义 CreateMutexW
+        CreateMutexW = kernel32.CreateMutexW
+        CreateMutexW.argtypes = [
+            wintypes.LPVOID,      # lpMutexAttributes
+            wintypes.BOOL,        # bInitialOwner
+            wintypes.LPCWSTR      # lpName
+        ]
+        CreateMutexW.restype = wintypes.HANDLE
+        ERROR_ALREADY_EXISTS = 183
+        def create_mutex(name: str, initial_owner: bool = False) -> wintypes.HANDLE:
+            handle = CreateMutexW(None, initial_owner, name)
+            if not handle:
+                raise ctypes.WinError(ctypes.get_last_error())
+            return handle
         try:
-            Single_mutex = win32event.CreateMutex(None, False, MUTEX_NAME)
-            if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
+            Single_mutex = create_mutex(MUTEX_NAME, False)
+            if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
                 print("Another instance is already running.")
                 sys.exit(1)
         except Exception as ae:
@@ -38,3 +54,5 @@ def check_single_instance(MUTEX_NAME = "Global\\SnippingTool_SingleInstance_v1.0
         except Exception as e:
             print(f"Failed to check single instance: {e}")
             sys.exit(1)
+if __name__ == "__main__":
+    check_single_instance()

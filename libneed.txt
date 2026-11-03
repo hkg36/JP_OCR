@@ -5,13 +5,10 @@ pystray
 loguru
 Pillow
 httpx
-PySide6
+#PySide6
 natsort
 unidic-lite
-fugashi
 pydantic
 bottle
-transformers
-tokenizers
-pywin32
 openai
+safetensors
