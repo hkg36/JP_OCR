@@ -395,12 +395,17 @@ class TkSnippingToolTests(unittest.TestCase):
                 "translate", lambda: self.tool.go_translate("text", config),
             ).result(5)
 
-    def test_tts_falls_back_to_google_and_passes_audio_to_worker_owned_player(self):
+    def test_tts_passes_voicevox_wav_to_worker_owned_player(self):
+        wav_stream = io.BytesIO()
+        with wave.open(wav_stream, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(24000)
+            wav.writeframes(b"\x00\x00" * 10)
         self.tool.voicevox = SimpleNamespace(
-            japanese_tts=Mock(side_effect=RuntimeError("voicevox unavailable")),
+            japanese_tts=Mock(return_value=wav_stream),
             stop_voicevox=Mock(),
         )
-        self.tool.gtts.japanese_tts = Mock(return_value=io.BytesIO(b"mp3 data"))
         self.tool.audio = Mock()
         config = {"voicevox": {"speaker_id": "20", "speed_scale": "0.9"}}
         self.tool.worker.submit(
@@ -409,8 +414,20 @@ class TkSnippingToolTests(unittest.TestCase):
         self.tool.voicevox.japanese_tts.assert_called_once_with(
             text="text", speaker=20, speed_scale=0.9, output_sampling_rate=24000,
         )
-        self.tool.gtts.japanese_tts.assert_called_once_with("text")
-        self.tool.audio.play.assert_called_once_with(b"mp3 data")
+        self.tool.audio.play.assert_called_once_with(wav_stream.getvalue())
+
+    def test_tts_does_not_fall_back_to_mp3(self):
+        config = {"voicevox": {"speaker_id": "20", "speed_scale": "0.9"}}
+        google_tts = Mock()
+        self.tool._service_config = config
+        self.tool.voicevox = SimpleNamespace(
+            japanese_tts=Mock(return_value=None),
+            stop_voicevox=Mock(),
+        )
+        self.tool.gtts = SimpleNamespace(japanese_tts=google_tts, session=None)
+        with self.assertRaisesRegex(RuntimeError, "VOICEVOX 语音合成失败"):
+            self.tool.goPlaySound("text", config)
+        google_tts.assert_not_called()
 
     def test_exit_does_not_wait_for_running_job_or_deliver_to_destroyed_tk(self):
         started = threading.Event()
@@ -430,9 +447,10 @@ class TkSnippingToolTests(unittest.TestCase):
         received.assert_not_called()
 
 
-@unittest.skipUnless(sys.platform == "win32", "Windows MCI")
 class WindowsAudioTests(unittest.TestCase):
-    def test_silent_wav_play_replay_and_cleanup(self):
+    @patch("screen_tk.sd.play")
+    @patch("screen_tk.sd.stop")
+    def test_silent_wav_play_replay_and_close_without_file_io(self, stop, play):
         stream = io.BytesIO()
         with wave.open(stream, "wb") as wav:
             wav.setnchannels(1)
@@ -440,30 +458,28 @@ class WindowsAudioTests(unittest.TestCase):
             wav.setframerate(24000)
             wav.writeframes(b"\x00\x00" * 2400)
         audio = WindowsAudio()
-        directory = Path(audio._directory.name)
-        try:
+        with patch("pathlib.Path.write_bytes") as write_bytes:
             audio.play(stream.getvalue())
             audio.replay()
             self.assertEqual(audio.last_audio_data, stream.getvalue())
-            self.assertTrue((directory / "tts.wav").exists())
-        finally:
+            self.assertEqual(play.call_count, 2)
+            self.assertEqual(play.call_args.args[1], 24000)
+            self.assertEqual(play.call_args.args[0].shape, (2400, 1))
             audio.close()
-        self.assertFalse(directory.exists())
+            write_bytes.assert_not_called()
+        self.assertEqual(audio.last_audio_data, b"")
+        self.assertEqual(stop.call_count, 3)
 
-    def test_mp3_suffix_and_invalid_audio_errors(self):
+    @patch("screen_tk.sd.play")
+    def test_rejects_empty_and_non_wav_audio(self, play):
         audio = WindowsAudio()
-        try:
-            with self.assertRaisesRegex(ValueError, "为空"):
-                audio.play(b"")
-            with self.assertRaisesRegex(RuntimeError, "暂无"):
-                audio.replay()
-            with patch.object(audio, "_command") as command:
-                audio.play(b"ID3 fake mp3")
-                self.assertIn("tts.mp3", command.call_args_list[0].args[0])
-                self.assertTrue((Path(audio._directory.name) / "tts.mp3").exists())
-                audio.close()
-        finally:
-            audio.close()
+        with self.assertRaisesRegex(ValueError, "为空"):
+            audio.play(b"")
+        with self.assertRaisesRegex(RuntimeError, "暂无"):
+            audio.replay()
+        with self.assertRaisesRegex(ValueError, "有效的 WAV"):
+            audio.play(b"ID3 fake mp3")
+        play.assert_not_called()
 
 
 if __name__ == "__main__":

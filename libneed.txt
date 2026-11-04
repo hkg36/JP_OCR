@@ -5,6 +5,8 @@ pystray
 loguru
 Pillow
 httpx
+numpy
+sounddevice
 #PySide6
 natsort
 unidic-lite

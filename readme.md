@@ -11,9 +11,11 @@ remains unchanged. Run `python screen_tk.py`, or use the free-threaded environme
 .\3.15t\Scripts\python.exe .\screen_tk.py
 ```
 
-It uses Python's Tcl/Tk, Pillow, pystray, pynput and the existing OCR/translation
-dependencies, without importing PySide6. Windows MCI plays both VOICEVOX WAV and
-Google TTS MP3. The tray menu provides capture, replay, settings and exit.
+It uses Python's Tcl/Tk, Pillow, pystray, pynput, sounddevice and the existing
+OCR/translation dependencies, without importing PySide6. sounddevice plays
+VOICEVOX 16-bit PCM WAV audio directly from memory; it does not fall back to
+Google TTS, write audio to disk, or support MP3 playback. The tray menu provides
+capture, replay, settings and exit.
 Alt+Q captures; Alt+W replays. Drag to select, pause for OCR/translation previews,
 release to close and read the final OCR result, or right-click/Escape to cancel.
 OCR copies text to the clipboard even if recognition finishes after release.

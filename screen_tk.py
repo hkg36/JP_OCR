@@ -9,17 +9,19 @@ import os
 from pathlib import Path
 import queue
 import sys
-import tempfile
 import threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+import wave
 from collections import OrderedDict
 from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Callable, TypeVar
+from tkinter import messagebox, ttk
 
 from loguru import logger
+import numpy as np
 from PIL import Image, ImageGrab, ImageTk
+import sounddevice as sd
 import yaml
 
 
@@ -104,55 +106,45 @@ class LatestWorker:
 
 
 class WindowsAudio:
-    """Use Windows MCI for WAV/MP3 without Qt or another audio dependency."""
+    """Play in-memory 16-bit PCM WAV audio with sounddevice."""
 
     def __init__(self):
-        self._directory = tempfile.TemporaryDirectory(prefix="jp_ocr_audio_")
-        self._winmm = ctypes.WinDLL("winmm")
-        self._winmm.mciSendStringW.argtypes = [
-            ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_void_p,
-        ]
-        self._winmm.mciSendStringW.restype = ctypes.c_uint
-        self._winmm.mciGetErrorStringW.argtypes = [
-            ctypes.c_uint, ctypes.c_wchar_p, ctypes.c_uint,
-        ]
-        self._winmm.mciGetErrorStringW.restype = ctypes.c_bool
-        self._opened = False
         self.last_audio_data = b""
-
-    def _command(self, command: str):
-        error = self._winmm.mciSendStringW(command, None, 0, None)
-        if error:
-            text = ctypes.create_unicode_buffer(512)
-            self._winmm.mciGetErrorStringW(error, text, len(text))
-            raise RuntimeError(f"音频命令失败 ({error}): {text.value}")
+        self._last_samples: np.ndarray | None = None
+        self._sample_rate: int | None = None
 
     def play(self, data: bytes):
         if not data:
             raise ValueError("音频数据为空")
-        if self._opened:
-            self._command("close jp_ocr_tk_audio")
-            self._opened = False
-        is_wav = data[:4] == b"RIFF" and data[8:12] == b"WAVE"
-        path = Path(self._directory.name) / ("tts.wav" if is_wav else "tts.mp3")
-        path.write_bytes(data)
-        self._command(f'open "{path}" type mpegvideo alias jp_ocr_tk_audio')
-        self._opened = True
-        self._command("play jp_ocr_tk_audio from 0")
+        try:
+            with wave.open(io.BytesIO(data), "rb") as wav:
+                if wav.getcomptype() != "NONE" or wav.getsampwidth() != 2:
+                    raise ValueError("只支持未压缩的 16 位 PCM WAV 音频")
+                channels = wav.getnchannels()
+                sample_rate = wav.getframerate()
+                samples = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2")
+        except (EOFError, wave.Error) as error:
+            raise ValueError("音频数据不是有效的 WAV 文件") from error
+        if not channels or not sample_rate or not samples.size:
+            raise ValueError("WAV 音频没有可播放的采样数据")
+        samples = samples.reshape(-1, channels)
+        sd.stop()
+        sd.play(samples, sample_rate)
+        self._last_samples = samples
+        self._sample_rate = sample_rate
         self.last_audio_data = data
 
     def replay(self):
-        if not self.last_audio_data:
+        if self._last_samples is None or self._sample_rate is None:
             raise RuntimeError("暂无可重播的语音")
-        self._command("play jp_ocr_tk_audio from 0")
+        sd.stop()
+        sd.play(self._last_samples, self._sample_rate)
 
     def close(self):
-        try:
-            if self._opened:
-                self._command("close jp_ocr_tk_audio")
-                self._opened = False
-        finally:
-            self._directory.cleanup()
+        sd.stop()
+        self._last_samples = None
+        self._sample_rate = None
+        self.last_audio_data = b""
 
 
 class BottomMessageOverlay:
@@ -540,7 +532,7 @@ class SnippingTool:
             if voice_path:
                 if not voicevox.start_voicevox_if_needed(voice_path, []):
                     if not voicevox.is_voicevox_running():
-                        logger.warning("VOICEVOX 不可用，语音合成将尝试 Google TTS")
+                        logger.warning("VOICEVOX 不可用，无法进行语音合成")
             else:
                 voicevox.ENGINE_URL = "http://localhost:50021"
         self._service_config = copy.deepcopy(config)
@@ -716,17 +708,13 @@ class SnippingTool:
     def goPlaySound(self, text, config):
         self._configure(config)
         voice = config.get("voicevox", {})
-        try:
-            stream = self.voicevox.japanese_tts(
-                text=text, speaker=int(voice.get("speaker_id") or 68),
-                speed_scale=float(voice.get("speed_scale") or 0.9),
-                output_sampling_rate=24000,
-            )
-        except Exception as error:
-            logger.warning("VOICEVOX 合成失败，尝试 Google TTS: {}", error)
-            stream = None
+        stream = self.voicevox.japanese_tts(
+            text=text, speaker=int(voice.get("speaker_id") or 68),
+            speed_scale=float(voice.get("speed_scale") or 0.9),
+            output_sampling_rate=24000,
+        )
         if stream is None:
-            stream = self.gtts.japanese_tts(text)
+            raise RuntimeError("VOICEVOX 语音合成失败")
         if self.audio is None:
             self.audio = WindowsAudio()
         self.audio.play(stream.getvalue())
