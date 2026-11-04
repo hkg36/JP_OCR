@@ -2,6 +2,35 @@
 
 **comic_reader.py** is a ZIP-format comic/manga reader. Although the shortcut keys are keyboard-based, its main purpose is to work with Steam's controller/handheld simulation features (emulating keyboard and mouse input via controller).
 
+### Tcl/Tk screenshot tool (Windows)
+
+[screen_tk.py](screen_tk.py) is a separate Tk implementation; [screen.py](screen.py)
+remains unchanged. Run `python screen_tk.py`, or use the free-threaded environment:
+
+```powershell
+.\3.15t\Scripts\python.exe .\screen_tk.py
+```
+
+It uses Python's Tcl/Tk, Pillow, pystray, pynput and the existing OCR/translation
+dependencies, without importing PySide6. Windows MCI plays both VOICEVOX WAV and
+Google TTS MP3. The tray menu provides capture, replay, settings and exit.
+Alt+Q captures; Alt+W replays. Drag to select, pause for OCR/translation previews,
+release to close and read the final OCR result, or right-click/Escape to cancel.
+OCR copies text to the clipboard even if recognition finishes after release.
+Settings continue to use `conf.yaml`, including local-only OCR model loading.
+
+One worker handles capture, configuration/model loading, local/remote OCR,
+translation, speech synthesis and playback. Each operation kind keeps only its
+newest **not-yet-started** job, moved to the queue tail; the replaced future is
+cancelled. Running jobs are not interrupted. Speech and replay share the audio
+kind. Hotkey/tray helper threads only post events; all Tk access happens on the
+main thread. Stale OCR/translation results cannot update a newer selection.
+Exit cancels queued work and lets the running operation finish before resource
+cleanup. Free-threaded compatibility of optional local-model dependencies must
+be checked separately; configuring an OCR server avoids importing the local model.
+
+Focused tests: `.\3.15t\Scripts\python.exe -m unittest discover -s tests -p test_screen_tk.py`.
+
 ### Local-only OCR model loading
 
 The website backend in [ocrserver.py](ocrserver.py) uses `MangaOcrCPT("flex", local_files_only=True)`.
