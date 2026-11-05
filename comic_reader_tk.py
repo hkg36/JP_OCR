@@ -257,6 +257,7 @@ class ComicReader:
             root.state("zoomed")
         else:
             root.attributes("-zoomed", True)
+        #root.overrideredirect(True)
         root.configure(background="black")
         self.image_label = tk.Label(root, text="请右键点击 -> 打开压缩包或图片",
                                     background="black", foreground="white", borderwidth=0)
@@ -392,7 +393,8 @@ class ComicReader:
         if image is None:
             if self.info is not None and self.info.names:
                 error = self.errors.get(self.current_index)
-                self._message(f"无法加载图片:\n{error}" if error else "正在加载图片...")
+                if error:
+                    self._message(f"无法加载图片:\n{error}")
             return
         size = (max(1, self.image_label.winfo_width()), max(1, self.image_label.winfo_height()))
         scaled = ImageOps.contain(image, size, Image.Resampling.LANCZOS)

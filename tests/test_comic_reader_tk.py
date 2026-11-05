@@ -411,6 +411,34 @@ class TkReaderTests(TempTests):
         self.reader.change_page(1)
         self.assertEqual(self.reader.current_index, 4)
 
+    def test_keeps_previous_image_while_next_page_loads(self):
+        self.reader.open_path(self.folder / "0.png")
+        self.pump_until(lambda: set(self.reader.cache) == {0, 1})
+        previous_photo = self.reader._photo
+        image = self.reader.cache.pop(1)
+        image.close()
+        started = threading.Event()
+        release = threading.Event()
+        self.addCleanup(release.set)
+        original = ComicSource.read
+
+        def read(source, index):
+            if index == 1:
+                started.set()
+                if not release.wait(5):
+                    raise TimeoutError("Test did not release worker")
+            return original(source, index)
+
+        with patch.object(ComicSource, "read", read):
+            self.reader.change_page(1)
+            self.assertTrue(started.wait(5))
+            self.assertIs(self.reader._photo, previous_photo)
+            self.assertEqual(self.reader.image_label.cget("text"), "")
+            self.assertEqual(self.reader.image_label.cget("image"), str(previous_photo))
+            release.set()
+            self.pump_until(lambda: 1 in self.reader.cache
+                            and self.reader._photo is not previous_photo)
+
     def test_old_generation_images_cannot_replace_new_source(self):
         self.reader.open_path(self.folder / "0.png")
         self.pump_until(lambda: 0 in self.reader.cache)
