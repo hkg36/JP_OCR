@@ -2,6 +2,40 @@
 
 **comic_reader.py** is a ZIP-format comic/manga reader. Although the shortcut keys are keyboard-based, its main purpose is to work with Steam's controller/handheld simulation features (emulating keyboard and mouse input via controller).
 
+### Tcl/Tk comic reader
+
+[comic_reader_tk.py](comic_reader_tk.py) is a separate implementation; the Qt
+reader is unchanged. Install Pillow, natsort, PyYAML, pybit7z and Send2Trash.
+Python must include Tcl/Tk. pybit7z uses its bundled full `7zip.dll` (not the
+ZIP/7z-only `7za.dll`) to read ZIP, RAR, 7z, CBZ and CBR archives.
+
+```powershell
+.\3.15t\Scripts\python.exe .\comic_reader_tk.py
+# Optional initial archive or image:
+.\3.15t\Scripts\python.exe .\comic_reader_tk.py "D:\comics\book.rar"
+```
+
+The borderless fullscreen reader shares `reader.yaml` with the original.
+Right-click opens the menu; Ctrl+O or middle-click opens a file. Left-click,
+Right/PageDown advance; Left/PageUp go back; Up/Down switch between naturally
+sorted archives in the same directory. The wheel supports accelerated paging,
+the slider seeks, and Escape exits. Opening an image recursively lists its
+directory, with direct children before subdirectory images.
+Delete moves the current archive, or the **entire image directory** in image
+mode, to the recycle bin after confirmation; it never permanently deletes.
+
+Archive opening, extraction, image decoding and adjacent-page preloading all
+run on one background thread. Only the current page and its immediate neighbors
+are cached. Tk widgets and PhotoImage objects stay on the main thread; queues
+transfer decoded images, and a condition protects pending work without relying
+on the GIL. New navigation replaces pending work and discards obsolete results.
+Exit waits asynchronously for any active native operation before releasing the
+archive. Use free-threaded wheels for Pillow and pybit7z; startup warns if a
+dependency has enabled the GIL. Password-protected or damaged archives report
+an error rather than prompting for a password.
+
+Focused tests: `.\3.15t\Scripts\python.exe -m unittest discover -s tests -p test_comic_reader_tk.py`.
+
 ### Tcl/Tk screenshot tool (Windows)
 
 [screen_tk.py](screen_tk.py) is a separate Tk implementation; [screen.py](screen.py)
