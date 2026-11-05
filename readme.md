@@ -15,7 +15,10 @@ ZIP/7z-only `7za.dll`) to read ZIP, RAR, 7z, CBZ and CBR archives.
 .\3.15t\Scripts\python.exe .\comic_reader_tk.py "D:\comics\book.rar"
 ```
 
-The borderless fullscreen reader shares `reader.yaml` with the original.
+The reader starts maximized (not fullscreen), leaving the taskbar visible,
+and shares `reader.yaml` with the original. Windows uses native physical pixels
+without bitmap scaling; Tk uses fixed 100% (96 DPI) scaling rather than the
+system scale factor.
 Right-click opens the menu; Ctrl+O or middle-click opens a file. Left-click,
 Right/PageDown advance; Left/PageUp go back; Up/Down switch between naturally
 sorted archives in the same directory. The wheel supports accelerated paging,

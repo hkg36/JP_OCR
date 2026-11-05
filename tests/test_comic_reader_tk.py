@@ -1,4 +1,6 @@
 import binascii
+import ctypes
+from ctypes import wintypes
 import gc
 from pathlib import Path
 import queue
@@ -15,7 +17,9 @@ from unittest.mock import patch
 from PIL import Image
 import pybit7z
 
-from comic_reader_tk import ComicReader, ComicSource, ReaderWorker, Request, Result
+from comic_reader_tk import (
+    ComicReader, ComicSource, ReaderWorker, Request, Result, enable_native_dpi,
+)
 
 
 def make_image(path, color="red"):
@@ -324,6 +328,7 @@ class TkReaderTests(TempTests):
         super().setUp()
         for index in range(5):
             make_image(self.folder / f"{index}.png")
+        enable_native_dpi()
         self.root = tk.Tk()
         self.root.withdraw()
         with patch.object(ComicReader, "load_config"):
@@ -354,6 +359,35 @@ class TkReaderTests(TempTests):
                 self.fail("Tk reader did not reach expected state")
             self.root.update()
             time.sleep(0.005)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows window geometry")
+    def test_startup_is_maximized_with_fixed_scaling_and_taskbar_space(self):
+        self.root.deiconify()
+        self.pump_until(lambda: self.root.state() == "zoomed"
+                        and self.root.winfo_width() > 300)
+        self.assertFalse(self.root.attributes("-fullscreen"))
+        self.assertAlmostEqual(float(self.root.tk.call("tk", "scaling")), 96 / 72, delta=0.01)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.GetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+        user32.GetAwarenessFromDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        self.assertEqual(user32.GetAwarenessFromDpiAwarenessContext(
+            user32.GetThreadDpiAwarenessContext()), 2)
+
+        class MonitorInfo(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                        ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+        user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+        user32.MonitorFromWindow.restype = wintypes.HANDLE
+        user32.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(MonitorInfo)]
+        monitor = user32.MonitorFromWindow(self.root.winfo_id(), 2)
+        info = MonitorInfo()
+        info.cbSize = ctypes.sizeof(info)
+        self.assertTrue(user32.GetMonitorInfoW(monitor, ctypes.byref(info)))
+        self.assertGreaterEqual(self.root.winfo_rootx(), info.rcWork.left)
+        self.assertGreaterEqual(self.root.winfo_rooty(), info.rcWork.top)
+        self.assertLessEqual(self.root.winfo_rootx() + self.root.winfo_width(), info.rcWork.right)
+        self.assertLessEqual(self.root.winfo_rooty() + self.root.winfo_height(), info.rcWork.bottom)
 
     def test_tk_render_seek_and_bounded_cache(self):
         photo_threads = []

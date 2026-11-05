@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 from dataclasses import dataclass
 import io
 import logging
@@ -27,6 +28,16 @@ logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
 ARCHIVE_EXTENSIONS = {".zip", ".rar", ".7z", ".cbz", ".cbr"}
 NATURAL_KEY = ns.natsort_keygen(alg=ns.IGNORECASE | ns.PATH)
+
+
+def enable_native_dpi() -> None:
+    if sys.platform == "win32":
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+        # Set before creating Tk so Windows does not bitmap-scale the window.
+        if not user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4)):
+            raise ctypes.WinError(ctypes.get_last_error())
 
 
 @dataclass(frozen=True)
@@ -241,7 +252,11 @@ class ComicReader:
         self.last_wheel_time = 0.0
         self.scroll_start_time = 0.0
         root.title("漫画阅读器")
-        root.attributes("-fullscreen", True)
+        root.tk.call("tk", "scaling", 96 / 72)
+        if sys.platform in ("win32", "darwin"):
+            root.state("zoomed")
+        else:
+            root.attributes("-zoomed", True)
         root.configure(background="black")
         self.image_label = tk.Label(root, text="请右键点击 -> 打开压缩包或图片",
                                     background="black", foreground="white", borderwidth=0)
@@ -553,6 +568,7 @@ def main() -> None:
     if sysconfig.get_config_var("Py_GIL_DISABLED") and sys._is_gil_enabled():
         warnings.warn("某个依赖启用了 GIL；请安装与 free-threaded Python 匹配的依赖。",
                       RuntimeWarning, stacklevel=1)
+    enable_native_dpi()
     root = tk.Tk()
     reader = ComicReader(root)
     try:
