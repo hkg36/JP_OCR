@@ -16,3 +16,4 @@ openai
 safetensors
 pybit7z
 Send2Trash
+huggingface_hub
