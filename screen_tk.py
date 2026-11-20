@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import ctypes
+from ctypes import wintypes
 import io
 import os
 from pathlib import Path
@@ -26,6 +27,75 @@ import yaml
 
 
 T = TypeVar("T")
+
+
+class WindowsHotkeys:
+    """Receive registered hotkeys on a dedicated Windows message queue."""
+
+    def __init__(self, callbacks: dict[int, Callable[[], None]], on_error: Callable[[str], None]):
+        self.callbacks = callbacks
+        self.on_error = on_error
+        self.user32 = ctypes.WinDLL("user32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.user32.RegisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT]
+        self.user32.RegisterHotKey.restype = wintypes.BOOL
+        self.user32.UnregisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int]
+        self.user32.UnregisterHotKey.restype = wintypes.BOOL
+        self.user32.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT]
+        self.user32.GetMessageW.restype = wintypes.BOOL
+        self.user32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        self.user32.PostThreadMessageW.restype = wintypes.BOOL
+        kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+        self.get_thread_id = kernel32.GetCurrentThreadId
+        self.ready = threading.Event()
+        self.error: Exception | None = None
+        self.thread_id = 0
+        self.thread = threading.Thread(target=self._run, name="windows-hotkeys", daemon=True)
+
+    def start(self):
+        self.thread.start()
+        self.ready.wait()
+        if self.error is not None:
+            self.thread.join()
+            raise self.error
+
+    def _run(self):
+        registered = []
+        try:
+            self.thread_id = self.get_thread_id()
+            for key in self.callbacks:
+                if not self.user32.RegisterHotKey(None, key, 0x0001, key):
+                    error = ctypes.get_last_error()
+                    raise OSError(error, f"无法注册 Alt+{chr(key)} 热键（可能已被其他程序占用）")
+                registered.append(key)
+            self.ready.set()
+            message = wintypes.MSG()
+            while True:
+                result = self.user32.GetMessageW(ctypes.byref(message), None, 0, 0)
+                if result == -1:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                if result == 0:
+                    break
+                if message.message == 0x0312 and message.wParam in self.callbacks:
+                    self.callbacks[message.wParam]()
+        except Exception as error:
+            if not self.ready.is_set():
+                self.error = error
+            else:
+                logger.exception("热键监听失败")
+                self.on_error(str(error))
+        finally:
+            for key in registered:
+                if not self.user32.UnregisterHotKey(None, key):
+                    logger.error("注销 Alt+{} 热键失败: {}", chr(key), ctypes.get_last_error())
+            self.ready.set()
+
+    def stop(self):
+        if self.thread.is_alive():
+            if not self.user32.PostThreadMessageW(self.thread_id, 0x0012, 0, 0):
+                logger.error("停止热键监听失败: {}", ctypes.get_last_error())
+                return
+            self.thread.join()
 
 
 @dataclass
@@ -432,7 +502,7 @@ class SnippingTool:
         self.capturing = False
         self.settings = None
         self.tray_icon = None
-        self.listener = None
+        self.hotkeys = None
         # These resources are owned exclusively by the worker.
         self.mocr = None
         self._mocr_model = None
@@ -735,11 +805,17 @@ class SnippingTool:
 
     def start_integrations(self):
         import pystray
-        from pynput import keyboard
 
         def post(callback):
             return lambda *_args: self.events.put(callback)
 
+        self.hotkeys = WindowsHotkeys(
+            {ord("Q"): post(self.start_snip), ord("W"): post(self.replay_sound)},
+            lambda error: self.events.put(
+                lambda: self.message_overlay.show_message(f"热键监听失败: {error}")
+            ),
+        )
+        self.hotkeys.start()
         icon_path = Path("data") / "tray.png"
         if icon_path.exists():
             with Image.open(icon_path) as source:
@@ -756,11 +832,6 @@ class SnippingTool:
             ),
         )
         self.tray_icon.run_detached()
-        self.listener = keyboard.GlobalHotKeys({
-            "<alt>+q": post(self.start_snip),
-            "<alt>+w": post(self.replay_sound),
-        })
-        self.listener.start()
         self.root.withdraw()
 
     def _cleanup(self):
@@ -784,8 +855,8 @@ class SnippingTool:
         self.overlay._cancel_timer()
         self.message_overlay.hide()
         self.root.after_cancel(self.poll_timer)
-        if self.listener is not None:
-            self.listener.stop()
+        if self.hotkeys is not None:
+            self.hotkeys.stop()
         if self.tray_icon is not None:
             self.tray_icon.stop()
         self.worker.shutdown(wait=False)

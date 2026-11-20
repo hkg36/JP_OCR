@@ -48,13 +48,16 @@ remains unchanged. Run `python screen_tk.py`, or use the free-threaded environme
 .\3.15t\Scripts\python.exe .\screen_tk.py
 ```
 
-It uses Python's Tcl/Tk, Pillow, pystray, pynput, sounddevice and the existing
+It uses Python's Tcl/Tk, Pillow, pystray, sounddevice and the existing
 OCR/translation dependencies, without importing PySide6. sounddevice plays
 VOICEVOX 16-bit PCM WAV audio directly from memory; it does not fall back to
 Google TTS, write audio to disk, or support MP3 playback. The tray menu provides
 capture, replay, settings and exit.
 Alt+Q captures; Alt+W replays. Drag to select, pause for OCR/translation previews,
 release to close and read the final OCR result, or right-click/Escape to cancel.
+The shortcuts use Windows `RegisterHotKey` so Steam controller keyboard mappings
+can trigger them when Windows recognizes the key combination. Startup reports
+an error if another application has already registered either shortcut.
 OCR copies text to the clipboard even if recognition finishes after release.
 Settings continue to use `conf.yaml`, including local-only OCR model loading.
 

@@ -1,4 +1,6 @@
 import io
+import ctypes
+from ctypes import wintypes
 from pathlib import Path
 import queue
 import sys
@@ -13,7 +15,74 @@ import wave
 
 from PIL import Image
 
-from screen_tk import LatestWorker, SnippingTool, WindowsAudio
+from screen_tk import LatestWorker, SnippingTool, WindowsAudio, WindowsHotkeys
+
+
+class WindowsHotkeysTests(unittest.TestCase):
+    def setUp(self):
+        self.messages = queue.Queue()
+        self.user32 = Mock()
+        self.user32.RegisterHotKey.return_value = True
+        self.user32.UnregisterHotKey.return_value = True
+        self.user32.GetMessageW.side_effect = self.get_message
+        self.user32.PostThreadMessageW.side_effect = self.post_message
+        self.kernel32 = Mock()
+        self.kernel32.GetCurrentThreadId.return_value = 123
+        self.dll = patch("screen_tk.ctypes.WinDLL", side_effect=[self.user32, self.kernel32])
+        self.dll.start()
+        self.addCleanup(self.dll.stop)
+
+    def get_message(self, pointer, _window, _minimum, _maximum):
+        kind, key = self.messages.get(timeout=5)
+        if kind == 0x0012:
+            return 0
+        message = ctypes.cast(pointer, ctypes.POINTER(wintypes.MSG)).contents
+        message.message = kind
+        message.wParam = key
+        return 1
+
+    def post_message(self, _thread_id, kind, key, _lparam):
+        self.messages.put((kind, key))
+        return True
+
+    def test_hotkeys_dispatch_and_unregister_on_stop(self):
+        received = queue.Queue()
+        hotkeys = WindowsHotkeys(
+            {ord("Q"): lambda: received.put("capture"), ord("W"): lambda: received.put("replay")},
+            self.fail,
+        )
+        hotkeys.start()
+        self.addCleanup(hotkeys.stop)
+        self.messages.put((0x0312, ord("Q")))
+        self.messages.put((0x0312, ord("W")))
+        self.assertEqual(received.get(timeout=5), "capture")
+        self.assertEqual(received.get(timeout=5), "replay")
+        hotkeys.stop()
+        self.assertFalse(hotkeys.thread.is_alive())
+        self.assertEqual(
+            self.user32.RegisterHotKey.call_args_list,
+            [unittest.mock.call(None, ord("Q"), 1, ord("Q")),
+             unittest.mock.call(None, ord("W"), 1, ord("W"))],
+        )
+        self.assertEqual(self.user32.UnregisterHotKey.call_count, 2)
+
+    def test_registration_failure_rolls_back_and_reports_conflict(self):
+        self.user32.RegisterHotKey.side_effect = [True, False]
+        hotkeys = WindowsHotkeys({ord("Q"): Mock(), ord("W"): Mock()}, self.fail)
+        with self.assertRaisesRegex(OSError, r"Alt\+W"):
+            hotkeys.start()
+        self.user32.UnregisterHotKey.assert_called_once_with(None, ord("Q"))
+        self.assertFalse(hotkeys.thread.is_alive())
+
+    def test_message_loop_failure_is_reported(self):
+        errors = queue.Queue()
+        self.user32.GetMessageW.return_value = -1
+        self.user32.GetMessageW.side_effect = None
+        hotkeys = WindowsHotkeys({ord("Q"): Mock()}, errors.put)
+        hotkeys.start()
+        self.assertTrue(errors.get(timeout=5))
+        hotkeys.thread.join(timeout=5)
+        self.user32.UnregisterHotKey.assert_called_once_with(None, ord("Q"))
 
 
 class LatestWorkerTests(unittest.TestCase):
@@ -165,6 +234,23 @@ class TkSnippingToolTests(unittest.TestCase):
         self.root.update()
         self.tool.overlay.press(SimpleNamespace(x=10, y=10))
         self.tool.overlay.move(SimpleNamespace(x=50, y=50))
+
+    def test_hotkey_posts_capture_to_tk_thread(self):
+        self.tool.start_snip = Mock()
+        icon = Mock()
+        pystray = SimpleNamespace(Icon=Mock(return_value=icon), Menu=Mock(), MenuItem=Mock())
+        with patch.dict(sys.modules, {"pystray": pystray}), patch("screen_tk.WindowsHotkeys") as hotkeys:
+            self.tool.start_integrations()
+            callback = hotkeys.call_args.args[0][ord("Q")]
+            thread = threading.Thread(target=callback)
+            thread.start()
+            thread.join()
+            self.tool.start_snip.assert_not_called()
+            self.pump_until(lambda: self.tool.start_snip.called)
+            self.tool.start_snip.assert_called_once_with()
+        self.tool.exit_app()
+        hotkeys.return_value.stop.assert_called_once_with()
+        icon.stop.assert_called_once_with()
 
     def test_completions_and_ui_run_only_on_main_thread(self):
         received = []
