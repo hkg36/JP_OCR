@@ -1,9 +1,11 @@
 import bottle
 import io
 from PIL import Image
-from manga_ocr_cpt_lib import MangaOcrCPT
+import os
+os.environ["HF_HUB_OFFLINE"] = "1"
+from manga_ocr_cpt import MangaOcrCPT
 app = bottle.Bottle()
-mocr = MangaOcrCPT("flex", local_files_only=True)
+mocr = MangaOcrCPT("flex")
 @app.route("/ocr", method="POST")
 def ocr_route():
     image = io.BytesIO(bottle.request.body.read())

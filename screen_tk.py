@@ -18,6 +18,8 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Callable, TypeVar
 from tkinter import messagebox, ttk
+import os
+os.environ["HF_HUB_OFFLINE"] = "1"
 
 from loguru import logger
 import numpy as np
@@ -615,9 +617,9 @@ class SnippingTool:
             return
         model = str(ocr.get("local_model") or "flex").strip() or "flex"
         if self.mocr is None or self._mocr_model != model:
-            from manga_ocr_cpt_lib import MangaOcrCPT
+            from manga_ocr_cpt import MangaOcrCPT
 
-            self.mocr = MangaOcrCPT(model, local_files_only=True)
+            self.mocr = MangaOcrCPT(model)
             self._mocr_model = model
 
     def OcrConfigChange(self):

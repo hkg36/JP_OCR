@@ -2,11 +2,14 @@ import json
 from pathlib import Path
 import sys
 import yaml
-from manga_ocr_cpt_lib import MangaOcrCPT
+import os
+
+from manga_ocr_cpt import MangaOcrCPT
 
 not_network = False
 if len(sys.argv) > 1 and sys.argv[1] == "--not-network":
     not_network = True
+    os.environ["HF_HUB_OFFLINE"] = "1"
 
 with open("conf.yaml", "r", encoding="utf-8") as f:
     conf = yaml.safe_load(f)
@@ -17,7 +20,7 @@ if not not_network:
 
 TEST_DATA_ROOT = Path(__file__).parent / "test_data"
 
-mocr = MangaOcrCPT("flex", local_files_only=not_network)
+mocr = MangaOcrCPT("flex")
 
 expected_results = json.loads((TEST_DATA_ROOT / "expected_results.json").read_text(encoding="utf-8"))
 
